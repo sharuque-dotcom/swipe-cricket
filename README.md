@@ -7,8 +7,14 @@ shows how early or late you were in milliseconds, so a miss is always explainabl
 
 ## Status
 
-Milestone 1, the nets: one batter, a bowling machine with pace, swing and spin, swipe batting,
-12-ball sessions. Bowling, fielders and full matches come next.
+- **20-over match, Blue v Red.** Red bat first (simulated from T20 scoring rates), you chase.
+  Five Red bowlers with their own styles (swing, pace, off spin, leg spin; yorkers and bouncers
+  at the death), ten fielders, catches, edges to the keeper and slip, bowled, strike rotation,
+  and a powerplay: after six overs the slip and point drop back to the boundary.
+  The match saves after every ball; resume it from the menu.
+- **Nets:** 12-ball sessions against a bowling machine.
+
+Bowling, run-outs and LBW come next.
 
 ## How to play
 
@@ -24,6 +30,13 @@ Open the folder in Godot 4.7 and press Play, or from a terminal:
 
 ```bash
 godot --path .
+```
+
+Skip the menu with `godot --path . -- --scene=match` (or `--scene=nets`). Add `--autoplay` to let a
+bot bat. Check the balance of the match (simulated player, timing spread as the argument):
+
+```bash
+godot --headless -s tests/balance_sim.gd -- 0.45
 ```
 
 Run the tests:
@@ -46,11 +59,12 @@ CI builds the APK and a web build on every push; download them from the run's ar
 
 ## Layout
 
-- `core/` deterministic simulation: ball physics, delivery solver, shot resolution, scoring
+- `core/` deterministic simulation: ball physics, delivery solver, shot resolution, scoring,
+  fielding (`fielding.gd`), the match (`match_state.gd`) and Red's innings (`innings_sim.gd`)
 - `input/` swipe recognition
 - `actors/` procedural players and bat, animated with inverse kinematics
 - `world/` stadium, pitch and shaders, all built in code
-- `game/` game loop and camera
+- `game/` menu, nets loop and camera, and the match (`match_game.gd`, built on the nets)
 - `ui/`, `audio/` HUD and synthesised sound
 - `tests/` headless tests
 

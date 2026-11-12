@@ -183,6 +183,38 @@ func set_score(runs: int, wickets: int, ball: int, total: int) -> void:
 	_score.text = "%d" % runs if wickets == 0 else "%d / %d" % [runs, wickets]
 	_balls.text = "BALL %d OF %d" % [mini(ball, total), total]
 
+## Match scoreboard: team title, "45/2", overs, and four lines under the bar.
+var _match_rows: Array[Label] = []
+
+func set_match_score(title: String, score: String, overs: String) -> void:
+	_mode.text = title
+	_score.text = score
+	_balls.text = overs
+
+func set_match_info(batters: String, bowler: String, need: String, over: String) -> void:
+	if _match_rows.is_empty():
+		var strip := ColorRect.new()
+		strip.color = Color(0.02, 0.05, 0.12, 0.55)
+		strip.set_anchors_preset(Control.PRESET_TOP_WIDE)
+		strip.offset_top = 122
+		strip.offset_bottom = 236
+		strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_root.add_child(strip)
+		_root.move_child(strip, 2)
+		var a := _label(21, Color(0.92, 0.95, 1.0), Control.PRESET_TOP_LEFT, Vector2(24, 132))
+		var b := _label(21, Color(1.0, 0.72, 0.72), Control.PRESET_TOP_RIGHT, Vector2(-24, 132))
+		b.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		b.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		var c := _center_label(27, Color(1.0, 0.86, 0.35), 0.0)
+		c.offset_top = 164
+		var d := _center_label(23, Color(1, 1, 1, 0.85), 0.0)
+		d.offset_top = 200
+		_match_rows = [a, b, c, d]
+	_match_rows[0].text = batters
+	_match_rows[1].text = bowler
+	_match_rows[2].text = need
+	_match_rows[3].text = over
+
 func set_delivery(text: String) -> void:
 	_delivery.text = text
 

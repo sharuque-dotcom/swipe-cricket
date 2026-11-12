@@ -176,8 +176,13 @@ func _next_ball() -> void:
 	if ball_no > BALLS:
 		_finish_session()
 		return
+	_start_delivery(machine.next())
+	hud.set_score(runs, wickets, ball_no, BALLS)
+
+## Sets up the scene for one ball: bowler run-up, fresh stumps, camera home.
+func _start_delivery(d: Delivery) -> void:
 	state = State.RUNUP
-	delivery = machine.next()
+	delivery = d
 	launch = delivery.solve()
 	ball = null
 	pending = null
@@ -197,7 +202,6 @@ func _next_ball() -> void:
 	marker.position = Vector3(pitch_at.pos.x, 0.03, pitch_at.pos.z)
 	marker.visible = false
 	hud.clear_result()
-	hud.set_score(runs, wickets, ball_no, BALLS)
 	hud.set_delivery("")
 	_cam_pos_to = CAM_HOME
 	_look_to = CAM_LOOK
@@ -354,7 +358,7 @@ func _connect() -> void:
 	hit_clock = clock
 	_last_bounces = 0
 	marker.visible = false
-	summary = NetsScoring.evaluate(pending.exit)
+	summary = _evaluate_hit(pending.exit)
 	var speed := pending.exit.vel.length()
 	if pending.outcome == ShotResolver.Outcome.EDGE:
 		sfx.play("edge")
@@ -365,6 +369,10 @@ func _connect() -> void:
 	hud.show_shot(pending.shot_name, "%d km/h off the bat" % int(round(speed * 3.6)))
 	Input.vibrate_handheld(int(lerpf(15.0, 45.0, pending.quality)))
 	_fov_to = 50.0
+
+## Where a hit ends up. The nets have an empty field; a match puts fielders in.
+func _evaluate_hit(exit: BallPhysics.State) -> NetsScoring.Summary:
+	return NetsScoring.evaluate(exit)
 
 func _score_hit() -> void:
 	state = State.DEAD
@@ -453,3 +461,8 @@ func _capture(delta: float) -> void:
 	_shot_index += 1
 	if _shot_index > 70:
 		get_tree().quit()
+
+## Android back button: back to the menu (a match is already saved after every ball).
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		get_tree().call_deferred("change_scene_to_file", "res://game/menu.tscn")
