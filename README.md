@@ -24,6 +24,19 @@ Swipe to play a shot. Lift your finger just before the ball arrives.
 - Speed of the swipe is power.
 - A long swipe lofts the ball; a short one keeps it on the ground.
 
+## How a match plays
+
+- Timing decides everything. The green zone of the timing meter is the sweet spot; the further
+  outside it, the less pace the ball comes off with. Only a middled lofted shot clears the rope.
+- Swinging harder, and going aerial, both shrink the green zone. A mistimed slog goes up, not out.
+- Batters differ. The scoreboard shows the striker's role and their POWER and TIMING out of
+  five; the tail can neither time it nor hit it far.
+- Eleven in the field: nine fielders, the keeper and the bowler, shown on the radar bottom-left.
+  A fielded ball stays in the fielder's hands and is thrown in to the keeper.
+
+`godot --headless -s tests/balance_sim.gd` plays whole innings with simulated players and prints
+what each style of batting scores; use it when changing `core/tuning.gd` or `core/fielding.gd`.
+
 ## Run it
 
 Open the folder in Godot 4.7 and press Play, or from a terminal:

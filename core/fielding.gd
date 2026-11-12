@@ -7,23 +7,26 @@ extends RefCounted
 
 enum Kind { CLOSE, INFIELD, DEEP, KEEPER }
 
-const REACTION := 0.45        # seconds before a fielder moves
-const RUN_SPEED := 6.2        # metres per second, chasing a ball
+const REACTION := 0.30        # seconds before a fielder moves
+const RUN_SPEED := 6.6        # metres per second, chasing a ball
+const DIVE := 0.6             # extra reach when stopping a ball along the ground
 const CLOSE_SPEED := 2.4      # keeper and slips mostly dive, they don't run
 const CATCH_LOW := 0.08       # ball height window for a catch, metres
 const CATCH_HIGH := 2.55
-const STOP_HIGH := 0.75       # below this a moving ball can be fielded
+const STOP_HIGH := 1.5        # below this a moving ball can be fielded
 const THROW_SPEED := 26.0     # m/s back to the stumps
 const THROW_RELEASE := 0.55   # pick-up and release time
-const STOP_CAP_IN := 9.0      # how far a fielder can get across to stop a ground ball
-const STOP_CAP_DEEP := 12.0
-const CATCH_REACTION := 0.65  # a catch needs the fielder to read the ball first
-const CATCH_RUN_SPEED := 3.6
-const CATCH_CAP_IN := 6.0
-const CATCH_CAP_DEEP := 9.0
+const STOP_CAP_IN := 12.0     # how far a fielder can get across to stop a ground ball
+const STOP_CAP_DEEP := 18.0
+const CATCH_REACTION := 0.50  # a catch needs the fielder to read the ball first
+const CATCH_RUN_SPEED := 4.0
+const CATCH_CAP_IN := 4.5
+const CATCH_CAP_DEEP := 12.0
 const CATCH_HARD_SPEED := 24.0 # m/s; faster than this, only a dive will do
-const RUN_TIME := 3.3         # seconds per run between the wickets
+const RUN_TIME := 2.8         # seconds per run between the wickets
 const MAX_RUNS := 3
+const KEEPER_BACK_PACE := 14.5
+const KEEPER_BACK_SPIN := 6.2
 
 class Spot:
 	extends RefCounted
@@ -52,7 +55,7 @@ class Spot:
 	func reach(t: float) -> float:
 		var speed := CLOSE_SPEED if kind == Kind.CLOSE or kind == Kind.KEEPER else RUN_SPEED
 		var cap := 2.6 if kind == Kind.CLOSE or kind == Kind.KEEPER else (STOP_CAP_DEEP if kind == Kind.DEEP else STOP_CAP_IN)
-		return minf(base_reach + speed * maxf(0.0, t - (0.2 if kind == Kind.CLOSE or kind == Kind.KEEPER else REACTION)), cap)
+		return minf(base_reach + DIVE + speed * maxf(0.0, t - (0.2 if kind == Kind.CLOSE or kind == Kind.KEEPER else REACTION)), cap)
 
 class Result:
 	extends NetsScoring.Summary
@@ -61,15 +64,19 @@ class Result:
 	var fielder_name := ""
 	var field_pos := Vector3.ZERO # where the fielder meets the ball
 	var field_time := 0.0         # seconds after contact
+	var field_height := 0.0       # how high the ball is when they take it
+	var field_dir := Vector3.ZERO # which way the ball is travelling when it reaches them
+	var end_pos := Vector3.ZERO   # where the ball is when play ends (fielded, at rest, or over the rope)
 
 ## A T20 field. Batter's stumps are at the origin; the bowler runs in from -Z; +X is off side.
 static func layout(spinner: bool, powerplay: bool = true) -> Array[Spot]:
 	var f: Array[Spot] = []
 	if spinner:
-		f.append(Spot.new("keeper", 0.2, 1.6, Kind.KEEPER, 1.2))
+		# The keeper stays back to the spinners too, out of the batter's eyeline.
+		f.append(Spot.new("keeper", 0.3, KEEPER_BACK_SPIN, Kind.KEEPER, 1.3))
 		f.append(Spot.new("long-on", -22.0, -66.0, Kind.DEEP, 1.0))
 	else:
-		f.append(Spot.new("keeper", 0.4, 14.5, Kind.KEEPER, 1.5))
+		f.append(Spot.new("keeper", 0.4, KEEPER_BACK_PACE, Kind.KEEPER, 1.5))
 		if powerplay:
 			f.append(Spot.new("slip", 2.4, 15.8, Kind.CLOSE, 1.3))
 		else:
@@ -118,6 +125,7 @@ static func evaluate(exit: BallPhysics.State, field: Array[Spot], max_time: floa
 			out.distance = Vector2(s.pos.x - origin.x, s.pos.z - origin.z).length()
 			if out.six:
 				out.carry = out.distance
+			out.end_pos = s.pos
 			return out
 		var in_air := s.bounces == 0
 		var catchable := in_air and s.pos.y >= CATCH_LOW and s.pos.y <= CATCH_HIGH
@@ -134,6 +142,9 @@ static func evaluate(exit: BallPhysics.State, field: Array[Spot], max_time: floa
 			out.fielder_name = spot.name
 			out.field_pos = Vector3(s.pos.x, 0.0, s.pos.z)
 			out.field_time = t
+			out.end_pos = s.pos
+			out.field_height = s.pos.y
+			out.field_dir = Vector3(s.vel.x, 0.0, s.vel.z).normalized()
 			out.end_time = s.time
 			out.distance = Vector2(s.pos.x - origin.x, s.pos.z - origin.z).length()
 			if catchable:
@@ -144,6 +155,7 @@ static func evaluate(exit: BallPhysics.State, field: Array[Spot], max_time: floa
 			return out
 	# Came to rest in a gap with nobody near: the nearest fielder walks over to it.
 	out.end_time = s.time
+	out.end_pos = s.pos
 	out.distance = Vector2(s.pos.x - origin.x, s.pos.z - origin.z).length()
 	var best := -1
 	var best_d := INF
@@ -156,6 +168,8 @@ static func evaluate(exit: BallPhysics.State, field: Array[Spot], max_time: floa
 		out.fielder = best
 		out.fielder_name = field[best].name
 		out.field_pos = Vector3(s.pos.x, 0.0, s.pos.z)
+		out.field_height = s.pos.y
+		out.field_dir = (out.field_pos - field[best].pos).normalized()
 		var fetch := maxf(s.time - t0, REACTION + best_d / RUN_SPEED)
 		out.field_time = fetch
 		out.runs = _runs_for(fetch, s.pos)

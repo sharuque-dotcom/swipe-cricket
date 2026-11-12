@@ -20,55 +20,76 @@ func _ready() -> void:
 	add_child(bg)
 	var shade := ColorRect.new()
 	shade.set_anchors_preset(Control.PRESET_FULL_RECT)
-	shade.color = Color(0.02, 0.05, 0.12, 0.62)
+	shade.color = Color(0.02, 0.05, 0.12, 0.70)
 	add_child(shade)
 
 	var col := VBoxContainer.new()
 	col.set_anchors_preset(Control.PRESET_FULL_RECT)
-	col.offset_left = 56
-	col.offset_right = -56
+	col.offset_left = 44
+	col.offset_right = -44
 	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	col.add_theme_constant_override("separation", 22)
+	col.add_theme_constant_override("separation", 16)
 	add_child(col)
-	var title := Label.new()
-	title.text = "SWIPE\nCRICKET"
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.add_theme_font_size_override("font_size", 96)
-	title.add_theme_constant_override("line_spacing", -18)
-	title.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
-	title.add_theme_constant_override("outline_size", 14)
+	col.add_child(_label("QUICK-FIRE T20", "semi", 28, Hud.GOLD))
+	var title := _label("SWIPE\nCRICKET", "bold", 150, Hud.TEXT)
+	title.add_theme_constant_override("line_spacing", -44)
+	title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
+	title.add_theme_constant_override("shadow_offset_y", 8)
+	title.add_theme_constant_override("shadow_outline_size", 16)
 	col.add_child(title)
-	var sub := Label.new()
-	sub.text = "BLUE v RED"
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.add_theme_font_size_override("font_size", 30)
-	sub.add_theme_color_override("font_color", Color(1.0, 0.86, 0.35))
-	col.add_child(sub)
+	var rule := ColorRect.new()
+	rule.color = Hud.GOLD
+	rule.custom_minimum_size = Vector2(120, 6)
+	rule.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	col.add_child(rule)
+	col.add_child(_label("Every ball is real physics. Timing is everything.", "med", 28, Hud.DIM))
 	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 60)
+	gap.custom_minimum_size = Vector2(0, 48)
 	col.add_child(gap)
 	var saved := _saved_summary()
 	if saved != "":
-		col.add_child(_button("RESUME MATCH\n" + saved, Color(0.15, 0.55, 0.25), func(): _go("match")))
-	col.add_child(_button("NEW 20-OVER MATCH", Color(0.10, 0.32, 0.78), func():
+		col.add_child(_button("RESUME MATCH", saved, Hud.GREEN, func(): _go("match")))
+	col.add_child(_button("NEW MATCH", "Chase Red's total in 20 overs", Hud.BLUE, func():
 		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://match.json"))
 		_go("match")))
-	col.add_child(_button("NETS", Color(0.22, 0.25, 0.33), func(): _go("nets")))
+	col.add_child(_button("NETS", "12 balls to find your timing", Hud.GOLD, func(): _go("nets")))
 
-func _button(text: String, c: Color, on_press: Callable) -> Button:
+func _label(text: String, weight: String, size: int, c: Color) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.add_theme_font_override("font", Hud.font(weight))
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", c)
+	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return l
+
+## A card button: accent bar, title, one line of description, chevron.
+func _button(text: String, sub: String, accent: Color, on_press: Callable) -> Button:
 	var b := Button.new()
-	b.text = text
-	b.custom_minimum_size = Vector2(0, 116 if "\n" in text else 96)
-	b.add_theme_font_size_override("font_size", 34)
+	b.custom_minimum_size = Vector2(0, 124)
 	for s in ["normal", "hover", "pressed", "focus"]:
-		var sb := StyleBoxFlat.new()
-		sb.bg_color = c.lightened(0.12) if s == "pressed" else c
-		sb.set_corner_radius_all(26)
-		sb.border_color = Color(1, 1, 1, 0.25)
-		sb.set_border_width_all(2)
-		sb.shadow_color = Color(0, 0, 0, 0.4)
-		sb.shadow_size = 10
+		var sb := Hud.card_box(28, 0.86, Color(1, 1, 1, 0.14))
+		if s == "pressed":
+			sb.bg_color = Color(Hud.NAVY_HI.r, Hud.NAVY_HI.g, Hud.NAVY_HI.b, 0.95)
+			sb.border_color = accent
 		b.add_theme_stylebox_override(s, sb)
+	var bar := ColorRect.new()
+	bar.color = accent
+	bar.position = Vector2(26, 34)
+	bar.size = Vector2(8, 56)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(bar)
+	var t := _label(text, "bold", 46, Hud.TEXT)
+	t.position = Vector2(54, 16)
+	b.add_child(t)
+	var d := _label(sub, "med", 26, Hud.DIM)
+	d.position = Vector2(54, 70)
+	b.add_child(d)
+	var ch := _label("›", "bold", 64, accent)
+	ch.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+	ch.position += Vector2(-52, -48)
+	b.add_child(ch)
 	b.pressed.connect(on_press)
 	return b
 

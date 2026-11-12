@@ -9,6 +9,12 @@ const MAX_WICKETS := 10
 
 const BLUE := ["A. Menon", "R. Desai", "V. Nair", "K. Bose", "S. Pillai", "D. Rao",
 	"P. Chopra", "N. Sethi", "J. Thomas", "M. Ali", "T. Kurian"]
+## Blue's batting card: role, power, timing (0..1). Strokemakers up top, hitters in the
+## middle, bowlers at the bottom who can neither time it nor clear the rope.
+const BLUE_SKILL := [
+	["Opener", 0.70, 0.90], ["Opener", 0.85, 0.80], ["Anchor", 0.75, 1.00], ["Power hitter", 1.00, 0.70],
+	["Keeper-batter", 0.70, 0.75], ["Finisher", 0.90, 0.60], ["All-rounder", 0.60, 0.55],
+	["All-rounder", 0.50, 0.45], ["Bowler", 0.35, 0.30], ["Bowler", 0.20, 0.20], ["Bowler", 0.10, 0.10]]
 const RED := ["L. Cole", "B. Hayes", "T. Moreau", "G. Lindqvist", "E. Mbeki", "F. Novak",
 	"O. Reyes", "C. Okafor", "M. Venn", "R. Whitlock", "D. Hartigan"]
 
@@ -79,6 +85,13 @@ func finished() -> bool:
 
 func won() -> bool:
 	return runs >= target
+
+static func skill_of(order: int) -> BatterSkill:
+	var k: Array = BLUE_SKILL[clampi(order, 0, BLUE_SKILL.size() - 1)]
+	return BatterSkill.new(k[0], k[1], k[2])
+
+func striker_skill() -> BatterSkill:
+	return skill_of(striker)
 
 func striker_name() -> String:
 	return batters[striker].name

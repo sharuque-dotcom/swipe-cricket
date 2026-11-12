@@ -17,6 +17,17 @@ var _spinner_field := false
 var _dead_for := 0.0
 var _fresh := false
 
+# Who has the ball. Once a fielder gathers it the ball sits in their hands, then is thrown in.
+const HOLD_BEFORE_THROW := 0.4
+var _taker: Fielder = null    # the fielder going for the ball (null with _take_at set = the bowler)
+var _take_at := -1.0          # ball-clock time at which they have it
+var _held := false
+var _held_for := 0.0
+var _throws := false
+var _throw_from := Vector3.ZERO
+var _throw_time := 0.0
+var _hold_pos := Vector3.ZERO
+
 func _new_session() -> void:
 	if fielders.is_empty():
 		_build_fielders()
@@ -36,16 +47,24 @@ func _new_session() -> void:
 	state = State.SUMMARY
 	timer = 0.0
 	phase = Phase.INTRO
+	hit_view_cap = 6.0
 	hud.set_hint("")
 	hud.clear_result()
+	hud.set_delivery("")
 	_set_field()
 	_refresh_hud()
+	var m := match_state
 	if resumed:
-		hud.show_panel("MATCH RESUMED\n\nBLUE %d/%d  (%s ov)\nNeed %d off %d\n\nTap to carry on" % [
-			match_state.runs, match_state.wickets, match_state.overs_text(), match_state.need(), match_state.balls_left()])
+		hud.show_card({"kicker": "MATCH RESUMED", "title": "%d/%d" % [m.runs, m.wickets], "sub": "after %s overs" % m.overs_text(),
+			"rows": [["Need", "%d off %d balls" % [m.need(), m.balls_left()]], ["Required rate", "%.1f" % m.required_rate()],
+				["On strike", m.striker_name()]],
+			"prompt": "Tap to carry on"})
 	else:
-		hud.show_panel("BLUE v RED  ·  20 OVERS\n\nRED  %d/%d\nTop score: %s\n\nTarget %d off 120 balls\n\nTap to start the chase" % [
-			match_state.red_total, match_state.red_wickets, match_state.red_top, match_state.target])
+		hud.show_card({"kicker": "20-OVER MATCH  ·  SECOND INNINGS", "title": "CHASE %d" % m.target, "sub": "off 120 balls",
+			"rows": [["RED made", "%d/%d" % [m.red_total, m.red_wickets], Hud.RED], ["Their top score", m.red_top],
+				["Required rate", "%.1f" % m.required_rate()]],
+			"notes": ["Time it in the green to clear the rope.\nYour bowlers can't hit like your openers."],
+			"prompt": "Tap to start the chase"})
 
 func _build_fielders() -> void:
 	for i in 11:
@@ -65,13 +84,23 @@ func _set_field() -> void:
 		f.visible = used
 		if used:
 			f.reset(field[i].pos)
+	hud.radar_field(field)
+
+func _batter_skill() -> BatterSkill:
+	return match_state.striker_skill()
 
 func _next_ball() -> void:
 	if match_state.finished():
 		_show_result()
 		return
 	phase = Phase.PLAY
-	hud.show_panel("")
+	hud.hide_card()
+	hud.radar_clear()
+	_taker = null
+	_take_at = -1.0
+	_held = false
+	_throws = false
+	_throw_time = 0.0
 	ball_no = match_state.balls + 1
 	machine.state = match_state.machine_state
 	var d := machine.next_for(match_state.bowler_style(), match_state.over_index())
@@ -83,27 +112,71 @@ func _next_ball() -> void:
 	_refresh_hud()
 
 func _refresh_hud() -> void:
-	var m := match_state
-	hud.set_match_score("BLUE  v  RED", "%d/%d" % [m.runs, m.wickets], "%s OV" % m.overs_text())
-	var bi := m.bowler_index()
-	var bat := "%s*  %d (%d)    %s  %d (%d)" % [m.batters[m.striker].name, m.batters[m.striker].runs, m.batters[m.striker].balls,
-		m.batters[m.non_striker].name, m.batters[m.non_striker].runs, m.batters[m.non_striker].balls]
-	var need := "" if m.finished() else "Need %d off %d  ·  RRR %.1f" % [m.need(), m.balls_left(), m.required_rate()]
-	hud.set_match_info(bat, "%s  %s" % [MatchState.BOWLERS[bi][0], m.bowler_figures(bi)], need, "  ".join(m.this_over))
+	hud.set_match(match_state)
 
 func _evaluate_hit(exit: BallPhysics.State) -> NetsScoring.Summary:
 	var r := Fielding.evaluate(exit, field)
-	# Send the fielder: they arrive as the ball does.
-	if r.fielder >= 0 and r.fielder < fielders.size() and fielders[r.fielder].visible:
-		fielders[r.fielder].go(r.field_pos, r.field_time, r.caught)
+	var chaser := -1
+	if r.fielder >= 0 and not r.boundary:
+		# Send the fielder: they arrive as the ball does, hands where it will be.
+		_take_at = exit.time + r.field_time
+		_throws = not r.caught and r.fielder_name != "keeper"
+		if r.fielder < fielders.size() and fielders[r.fielder].visible:
+			_taker = fielders[r.fielder]
+			_taker.go(r.field_pos, r.field_time, r.caught, r.field_height, r.field_dir)
+			chaser = r.fielder
+		else:
+			_throws = false   # the bowler took it in the follow-through
+	# Whoever else is nearest gives chase, so nobody stands and watches it go by.
+	var best_d := 45.0
+	var runner := -1
+	for i in fielders.size() - 1:
+		if i == chaser or i == 0 or not fielders[i].visible:
+			continue
+		var d := Vector2(field[i].pos.x - r.end_pos.x, field[i].pos.z - r.end_pos.z).length()
+		if d < best_d:
+			best_d = d
+			runner = i
+	if runner >= 0:
+		fielders[runner].chase(r.end_pos, r.end_time - exit.time)
 	return r
+
+## The ball as drawn. Once the fielder has it, it stays in their hands until they throw it
+## in to the keeper, so it can never be seen running on through them.
+func _show_ball() -> void:
+	if _take_at >= 0.0 and not _held and ball.time >= _take_at:
+		_held = true
+		_held_for = 0.0
+		_cam_parked = true
+		_trail_pos.clear()
+		_hold_pos = _taker.hands_global() if _taker != null else Vector3(ball.pos.x, maxf(ball.pos.y, BallPhysics.RADIUS), ball.pos.z)
+		if _taker != null:
+			sfx.play("bounce", -9.0)
+	if _held:
+		var at := _taker.hands_global() if _taker != null and _held_for < HOLD_BEFORE_THROW else _hold_pos
+		if _throws and _held_for >= HOLD_BEFORE_THROW:
+			var keeper := fielders[0]
+			if _throw_time <= 0.0:
+				_throw_from = _taker.hands_global()
+				_throw_time = maxf(_throw_from.distance_to(keeper.position) / Fielding.THROW_SPEED, 0.25)
+				_taker.throw_to(keeper.position)
+				keeper.take_throw(_throw_from)
+			var u := clampf((_held_for - HOLD_BEFORE_THROW) / _throw_time, 0.0, 1.0)
+			var arc := _throw_from.distance_to(keeper.position) * 0.07
+			at = _throw_from.lerp(keeper.hands_global(), u) + Vector3.UP * (4.0 * arc * u * (1.0 - u))
+		_hold_pos = at
+		ball.pos = at
+		ball.vel = Vector3.ZERO
+		ball.at_rest = true
+	elif state == State.HIT:
+		hud.radar_ball(ball.pos)
+	super._show_ball()
 
 func _score_hit() -> void:
 	var r := summary as Fielding.Result
 	state = State.DEAD
 	timer = 1.6
 	if r != null and r.caught:
-		ball.at_rest = true
 		var how := ("c %s b %s" % [r.fielder_name, _surname(match_state.bowler_name())]) if r.fielder_name != "bowler" \
 			else "c & b %s" % _surname(match_state.bowler_name())
 		if r.fielder_name == "keeper":
@@ -117,7 +190,11 @@ func _score_hit() -> void:
 		return
 	super._score_hit()
 	if r != null and not r.boundary and r.fielder >= 0:
-		hud.show_shot(pending.shot_name, "Fielded at %s" % r.fielder_name)
+		hud.show_shot(pending.shot_name, "Fielded by %s  ·  %d m" % [r.fielder_name, int(round(r.distance))])
+		# Leave time to see the pick-up and the throw come in.
+		var wait := maxf(0.0, _take_at - ball.time)
+		var throw := Vector2(r.field_pos.x, r.field_pos.z).length() / Fielding.THROW_SPEED if _throws else 0.0
+		timer = clampf(wait + HOLD_BEFORE_THROW + throw + 0.5, 1.6, 3.4)
 	_record(summary.runs, "")
 
 func _bowled() -> void:
@@ -130,7 +207,20 @@ func _bowled() -> void:
 
 func _passed() -> void:
 	super._passed()
+	_keeper_takes()
 	_record(0, "")
+
+## A ball the batter missed or left carries through to the keeper's gloves.
+func _keeper_takes() -> void:
+	var keeper := fielders[0]
+	var kz := field[0].pos.z
+	var s := BallPhysics.state_at_z(ball, kz - Fielder.CATCH_REACH)
+	if s == null or s.pos.y > 2.4 or absf(s.pos.x - field[0].pos.x) > 4.0:
+		return
+	_taker = keeper
+	_take_at = s.time
+	_throws = false
+	keeper.go(s.pos, s.time - ball.time, true, s.pos.y, Vector3(0, 0, 1))
 
 func _surname(n: String) -> String:
 	var parts := n.split(" ")
@@ -146,7 +236,7 @@ func _record(scored: int, how_out: String) -> void:
 	wickets = match_state.wickets
 	_save()
 	if ev.wicket and ev.new_batter != "":
-		hud.set_delivery("In: %s" % ev.new_batter)
+		hud.set_delivery("NEW BATTER  ·  %s  ·  %s" % [ev.new_batter, match_state.striker_skill().role])
 	if ev.finished:
 		_refresh_hud()
 		timer = maxf(timer, 2.2)
@@ -177,18 +267,26 @@ func _show_result() -> void:
 	var m := match_state
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
 	var won := m.won()
-	hud.show_big("YOU WIN!" if won else ("TIED!" if m.runs == m.target - 1 else "RED WIN"), Color(0.4, 0.85, 1.0) if won else Color(1.0, 0.35, 0.35))
 	sfx.play("cheer" if won else "groan")
 	stadium.crowd_material.set_shader_parameter("excite", 1.0 if won else 0.0)
-	hud.show_panel("%s\n\nBLUE %d/%d (%s ov)\nRED %d/%d (20 ov)\n\nTop scorer: %s\nBest bowler: %s\n\nTap for a new match" % [
-		m.result_text(), m.runs, m.wickets, m.overs_text(), m.red_total, m.red_wickets, m.top_blue(), m.best_bowler()])
+	hud.set_delivery("")
+	var tied := m.runs == m.target - 1
+	var text := m.result_text()
+	var by := text.find(" by ")
+	hud.show_card({"kicker": "MATCH RESULT", "title": "YOU WIN!" if won else ("TIED!" if tied else "RED WIN"),
+		"sub": "" if tied else ("Blue win" + text.substr(by) if won else text.substr(by + 1)),
+		"accent": Hud.GOLD if won else (Hud.TEXT if tied else Hud.RED),
+		"rows": [["BLUE", "%d/%d  (%s ov)" % [m.runs, m.wickets, m.overs_text()], Hud.BLUE],
+			["RED", "%d/%d  (20 ov)" % [m.red_total, m.red_wickets], Hud.RED],
+			["Top scorer", m.top_blue()], ["Best bowler", m.best_bowler()]],
+		"prompt": "Tap for a new match"})
 
 func _on_swipe_started() -> void:
 	hud.trail_begin()
 	match phase:
 		Phase.INTRO:
 			if timer > 0.4:
-				hud.show_panel("")
+				hud.hide_card()
 				_next_ball()
 			return
 		Phase.RESULT:
@@ -204,6 +302,8 @@ func _process(delta: float) -> void:
 	super._process(delta)
 	if state == State.DEAD:
 		_dead_for += delta
+	if _held:
+		_held_for += minf(delta, 0.05)
 	if state == State.RUNUP and bowler.t > -0.6:
 		for f in fielders:
 			if f.visible:

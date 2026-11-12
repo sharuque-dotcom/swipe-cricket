@@ -50,6 +50,12 @@ var _torso_basis := Basis.IDENTITY
 var shoulder_l := Vector3.ZERO
 var shoulder_r := Vector3.ZERO
 
+## Midpoint between the two hands, in world space: where a held ball sits.
+func hands_global() -> Vector3:
+	var l: MeshInstance3D = _seg["hand_l"]
+	var r: MeshInstance3D = _seg["hand_r"]
+	return to_global((l.position + r.position) * 0.5)
+
 static func mat(c: Color, rough: float = 0.75) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = c

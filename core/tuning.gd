@@ -10,8 +10,20 @@ const SWING_TIME := 0.12
 # How long the bat stays in the hitting zone.
 const BAT_DWELL := 0.12
 # |n| thresholds on normalised timing error (1.0 = last possible contact).
-const PERFECT_N := 0.15
-const CLEAN_N := 0.75
+const PERFECT_N := 0.28
+const CLEAN_N := 0.80
+# Swinging harder, and going aerial, both shrink the sweet part of the window.
+const POWER_CONTROL_COST := 0.30
+const LOFT_CONTROL_COST := 0.20
+# How quickly a shot loses pace as timing leaves the sweet zone (smaller = harsher).
+const MISTIME_FALLOFF := 0.65
+# A mistimed lofted shot goes up rather than out.
+const MISTIME_SKY := deg_to_rad(12.0)
+
+# Batter ability: what the weakest tail-ender keeps of the best batter's numbers.
+const SKILL_POWER_FLOOR := 0.74
+const SKILL_SWEET_FLOOR := 0.50
+const SKILL_CLEAN_FLOOR := 0.70
 
 # Where the bat can physically reach, relative to middle stump.
 const REACH_LEG_X := -0.80
@@ -19,7 +31,7 @@ const REACH_OFF_X := 1.20
 const REACH_TOP_Y := 2.0
 
 const BAT_SPEED_MIN := 9.0
-const BAT_SPEED_MAX := 27.0
+const BAT_SPEED_MAX := 25.5
 const BALL_SPEED_CARRY := 0.22
 const BAT_SPEED_CARRY := 1.18
 const MISTIME_ANGLE := deg_to_rad(28.0)

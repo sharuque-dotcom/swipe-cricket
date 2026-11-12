@@ -11,6 +11,7 @@ class Swing:
 	var power := 0.5          # 0..1
 	var loft := 0.0           # 0..1
 	var contact_time := 0.0   # ball-clock time at which the bat arrives
+	var skill: BatterSkill = null   # who is batting; null plays as the best batter
 
 class Result:
 	extends RefCounted
@@ -23,13 +24,16 @@ class Result:
 	var exit: BallPhysics.State = null
 	var shot_name := ""
 	var reason := ""
+	# The timing zones this swing was judged against: they depend on the batter and the shot.
+	var perfect_n := Tuning.PERFECT_N
+	var clean_n := Tuning.CLEAN_N
 
 	func timing_label() -> String:
 		var a := absf(timing_n)
-		if a <= Tuning.PERFECT_N:
+		if a <= perfect_n:
 			return "PERFECT"
 		var side := "EARLY" if timing_n < 0.0 else "LATE"
-		if a <= Tuning.CLEAN_N:
+		if a <= clean_n:
 			return side
 		return "TOO " + side
 
@@ -53,6 +57,13 @@ static func hit_window(ball: BallPhysics.State) -> Dictionary:
 
 static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 	var r := Result.new()
+	var sk := swing.skill if swing.skill != null else BatterSkill.new()
+	var pw := clampf(swing.power, 0.0, 1.0)
+	var lf := clampf(swing.loft, 0.0, 1.0)
+	# A controlled push has a wide sweet zone; a full-blooded lofted swing a narrow one.
+	var control := 1.0 - Tuning.POWER_CONTROL_COST * pw * pw - Tuning.LOFT_CONTROL_COST * lf * pw
+	r.perfect_n = Tuning.PERFECT_N * sk.sweet_scale() * control
+	r.clean_n = Tuning.CLEAN_N * sk.clean_scale() * (1.0 - 0.10 * lf * pw)
 	var w := hit_window(ball)
 	if w.is_empty():
 		r.reason = "Ball never reached the bat"
@@ -76,14 +87,17 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 	var horizontal := absf(deg) > 50.0 and not behind
 	r.shot_name = _name(deg, at.pos.y, swing.loft)
 
-	if absf(n) > Tuning.CLEAN_N:
+	if absf(n) > r.clean_n:
 		r.outcome = Outcome.EDGE
 		r.quality = 0.1
 		var edge_speed := 0.5 * speed_in + 3.0
 		if n > 0.0:
-			# Late: thick outside edge, flying behind square on the off side.
+			# Late: outside edge behind the wicket. The later the bat, the finer it goes:
+			# a thin one carries to the keeper, thicker ones to slip or down to third man.
 			r.shot_name = "Outside edge"
-			r.exit = _exit(at, deg_to_rad(158.0), deg_to_rad(9.0), edge_speed)
+			var fine := clampf((n - r.clean_n) / maxf(1.0 - r.clean_n, 0.01), 0.0, 1.0)
+			var up := deg_to_rad(9.0 + clampf((30.0 - speed_in) * 0.35, 0.0, 5.0))
+			r.exit = _exit(at, deg_to_rad(lerpf(140.0, 177.0, fine)), up, edge_speed)
 		else:
 			# Early: leading edge, looping up in front.
 			r.shot_name = "Leading edge"
@@ -92,9 +106,9 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 
 	# Timing quality: flat inside the perfect window, falling away toward the edge zone.
 	var q_time := 1.0
-	if absf(n) > Tuning.PERFECT_N:
-		var k := (absf(n) - Tuning.PERFECT_N) / (Tuning.CLEAN_N - Tuning.PERFECT_N)
-		q_time = 1.0 - 0.7 * pow(k, 1.4)
+	if absf(n) > r.perfect_n:
+		var k := (absf(n) - r.perfect_n) / (r.clean_n - r.perfect_n)
+		q_time = 1.0 - 0.85 * pow(k, Tuning.MISTIME_FALLOFF)
 	# Is this the right shot for the ball's height?
 	var y := at.pos.y
 	var lo := 0.55 if horizontal else 0.10
@@ -108,7 +122,7 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 
 	r.outcome = Outcome.HIT
 	r.quality = q_time * q_height * q_line
-	var bat_speed := lerpf(Tuning.BAT_SPEED_MIN, Tuning.BAT_SPEED_MAX, clampf(swing.power, 0.0, 1.0))
+	var bat_speed := lerpf(Tuning.BAT_SPEED_MIN, sk.bat_speed_max(), pw)
 	if behind:
 		bat_speed *= 0.3
 	var out_speed := (Tuning.BALL_SPEED_CARRY * speed_in + Tuning.BAT_SPEED_CARRY * bat_speed) \
@@ -118,10 +132,11 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 	# Late sends the ball squarer on the off side; early drags it to leg and up.
 	var out_angle := swing.angle + n * Tuning.MISTIME_ANGLE
 	var elev := lerpf(Tuning.LOFT_MIN, Tuning.LOFT_MAX, clampf(swing.loft, 0.0, 1.0))
-	elev += maxf(0.0, -n) * deg_to_rad(16.0) - maxf(0.0, n) * deg_to_rad(4.0)
+	elev += maxf(0.0, -n) * deg_to_rad(12.0) - maxf(0.0, n) * deg_to_rad(4.0)
 	if not horizontal and y > 1.0:
 		elev += deg_to_rad(8.0)
 	elev += (1.0 - q_height) * deg_to_rad(14.0)
+	elev += (1.0 - q_time) * lf * Tuning.MISTIME_SKY
 	r.exit = _exit(at, out_angle, elev, out_speed)
 	# Lofted shots carry backspin, which holds them up.
 	var flat := Vector3(r.exit.vel.x, 0.0, r.exit.vel.z).normalized()

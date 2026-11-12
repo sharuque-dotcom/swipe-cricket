@@ -80,3 +80,32 @@ func test_same_input_same_shot() -> void:
 	var a := _swing(_ball(), 0.33, 40.0, 0.7, 0.4)
 	var b := _swing(_ball(), 0.33, 40.0, 0.7, 0.4)
 	check(a.exit.vel == b.exit.vel and a.exit.pos == b.exit.pos, "no randomness in shot resolution")
+
+func test_mistimed_slog_does_not_clear_the_rope() -> void:
+	# Just outside the green: the same swing that was six when middled now falls short.
+	var r := _swing(_ball(), 0.38, 0.0, 1.0, 1.0)
+	check(r.outcome == ShotResolver.Outcome.HIT, "still bat on ball")
+	var s := NetsScoring.evaluate(r.exit)
+	check(not s.six, "a mistimed lofted drive should not be six (carry %.0f m)" % s.carry)
+
+func test_tail_ender_cannot_hit_like_an_opener() -> void:
+	var b := _ball()
+	var w := ShotResolver.hit_window(b)
+	var speeds := []
+	for sk in [BatterSkill.new("Opener", 0.85, 0.8), BatterSkill.new("Bowler", 0.1, 0.1)]:
+		var sw := ShotResolver.Swing.new()
+		sw.power = 1.0
+		sw.loft = 1.0
+		sw.skill = sk
+		sw.contact_time = w.t_mid
+		var r := ShotResolver.resolve(b, sw)
+		speeds.append(r.exit.vel.length())
+		if sk.role == "Bowler":
+			check(not NetsScoring.evaluate(r.exit).six, "number eleven's best straight hit stays in the ground")
+			check(r.perfect_n < Tuning.PERFECT_N * 0.6, "and their sweet zone is small")
+	check(speeds[0] > speeds[1] + 4.0, "opener %.1f m/s v tail %.1f m/s" % speeds)
+
+func test_harder_swing_has_a_smaller_sweet_zone() -> void:
+	var soft := _swing(_ball(), 0.0, 0.0, 0.3, 0.0)
+	var slog := _swing(_ball(), 0.0, 0.0, 1.0, 1.0)
+	check(slog.perfect_n < soft.perfect_n * 0.7, "slog %.2f v push %.2f" % [slog.perfect_n, soft.perfect_n])

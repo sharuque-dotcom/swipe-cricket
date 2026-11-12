@@ -49,6 +49,8 @@ var _trail: Array[MeshInstance3D] = []
 var _trail_pos: Array[Vector3] = []
 var _trail_tick := 0.0
 var _cam_locked := false
+var _cam_parked := false     # stop the chase camera moving (the ball is in a fielder's hands)
+var hit_view_cap := 4.2      # longest we follow a hit before scoring it
 
 # Test hooks: --autoplay swings by itself, --shots=DIR saves frames.
 var autoplay := false
@@ -167,7 +169,7 @@ func _new_session() -> void:
 	runs = 0
 	wickets = 0
 	ball_no = 0
-	hud.show_panel("")
+	hud.hide_card()
 	hud.set_hint("Swipe to play a shot\nDirection aims · Speed is power · Long swipe lofts")
 	_next_ball()
 
@@ -206,6 +208,7 @@ func _start_delivery(d: Delivery) -> void:
 	_cam_pos_to = CAM_HOME
 	_look_to = CAM_LOOK
 	_fov_to = CAM_FOV
+	_cam_parked = false
 	stadium.crowd_material.set_shader_parameter("excite", 0.0)
 
 func _finish_session() -> void:
@@ -213,8 +216,8 @@ func _finish_session() -> void:
 	timer = 0.0
 	best = maxi(best, runs)
 	hud.set_hint("")
-	hud.show_panel("SESSION OVER\n\n%d runs off %d balls\n%d wicket%s lost\nBest: %d\n\nTap to go again" % [
-		runs, BALLS, wickets, "" if wickets == 1 else "s", best])
+	hud.show_card({"kicker": "NETS SESSION", "title": "%d RUNS" % runs, "sub": "off %d balls" % BALLS,
+		"rows": [["Wickets lost", str(wickets)], ["Best session", str(best)]], "prompt": "Tap to go again"})
 
 func _on_swipe_started() -> void:
 	hud.trail_begin()
@@ -246,6 +249,7 @@ func _swing(angle: float, power: float, loft: float, contact_time: float) -> voi
 	sw.power = power
 	sw.loft = loft
 	sw.contact_time = contact_time
+	sw.skill = _batter_skill()
 	pending = ShotResolver.resolve(launch, sw)
 	var w := ShotResolver.hit_window(launch)
 	var where := pending.contact_pos
@@ -253,6 +257,10 @@ func _swing(angle: float, power: float, loft: float, contact_time: float) -> voi
 		where = ShotResolver.state_at_time(launch, clampf(contact_time, w.t_in, w.t_out)).pos
 		sfx.play("whoosh")
 	batter.swing(where, angle)
+
+## Who is on strike. The nets batter is as good as they come.
+func _batter_skill() -> BatterSkill:
+	return null
 
 func _process(delta: float) -> void:
 	delta = minf(delta, 0.05)
@@ -325,7 +333,7 @@ func _advance(delta: float) -> void:
 				_passed()
 				return
 		elif state == State.HIT:
-			if Pitch.beyond_boundary(ball.pos) or ball.at_rest or clock - hit_clock > minf(summary.end_time - pending.contact_time, 4.2):
+			if Pitch.beyond_boundary(ball.pos) or ball.at_rest or clock - hit_clock > minf(summary.end_time - pending.contact_time, hit_view_cap):
 				_score_hit()
 				return
 	_show_ball()
@@ -365,7 +373,7 @@ func _connect() -> void:
 	else:
 		sfx.play("bat", lerpf(-8.0, 0.0, clampf(speed / 38.0, 0.0, 1.0)), lerpf(0.85, 1.1, pending.quality))
 		_shake = 0.05 * clampf(speed / 40.0, 0.0, 1.0) * pending.quality
-	hud.show_timing(pending.timing_n, pending.timing_label(), pending.timing_ms)
+	hud.show_timing(pending.timing_n, pending.timing_label(), pending.timing_ms, pending.perfect_n, pending.clean_n)
 	hud.show_shot(pending.shot_name, "%d km/h off the bat" % int(round(speed * 3.6)))
 	Input.vibrate_handheld(int(lerpf(15.0, 45.0, pending.quality)))
 	_fov_to = 50.0
@@ -428,7 +436,7 @@ func _explain_miss() -> void:
 		return
 	hud.show_shot(pending.reason, "")
 	if absf(pending.timing_n) < 3.0:
-		hud.show_timing(pending.timing_n, pending.timing_label(), pending.timing_ms)
+		hud.show_timing(pending.timing_n, pending.timing_label(), pending.timing_ms, pending.perfect_n, pending.clean_n)
 
 func _update_camera(delta: float) -> void:
 	if _cam_locked:
@@ -439,7 +447,8 @@ func _update_camera(delta: float) -> void:
 		var back := (Vector3(ball.pos.x, 0.0, ball.pos.z) - Vector3(pending.contact_pos.x, 0.0, pending.contact_pos.z))
 		var flat := back.normalized() if back.length() > 0.5 else Vector3(0, 0, -1)
 		var trail_dist := clampf(6.0 + back.length() * 0.35, 6.0, 22.0)
-		_cam_pos_to = Vector3(ball.pos.x, 0.0, ball.pos.z) - flat * trail_dist + Vector3(0, 3.2 + back.length() * 0.09 + ball.pos.y * 0.5, 0)
+		if not _cam_parked:
+			_cam_pos_to = Vector3(ball.pos.x, 0.0, ball.pos.z) - flat * trail_dist + Vector3(0, 3.2 + back.length() * 0.09 + ball.pos.y * 0.5, 0)
 	_cam_pos = _cam_pos.lerp(_cam_pos_to, 1.0 - exp(-delta * (2.4 if state == State.HIT else 4.0)))
 	_cam_look = _cam_look.lerp(_look_to, 1.0 - exp(-delta * 9.0))
 	cam.fov = lerpf(cam.fov, _fov_to, 1.0 - exp(-delta * 3.0))
