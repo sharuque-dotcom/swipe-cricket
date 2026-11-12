@@ -92,7 +92,7 @@ func _ready() -> void:
 	_hint = Label.new()
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_hint.add_theme_font_size_override("font_size", 27)
+	_hint.add_theme_font_size_override("font_size", 23)
 	_hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
 	_hint.add_theme_constant_override("line_spacing", 6)
 	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE

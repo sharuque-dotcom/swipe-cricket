@@ -43,7 +43,7 @@ func _sky() -> void:
 	# A little haze over the far side of the ground, like a broadcast camera sees it.
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.80, 0.85, 0.90)
-	env.fog_density = 0.0025
+	env.fog_density = 0.0015
 	env.fog_sky_affect = 0.0
 	var we := WorldEnvironment.new()
 	we.environment = env

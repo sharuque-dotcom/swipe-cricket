@@ -2,10 +2,18 @@
 
 importer="texture"
 type="CompressedTexture2D"
+uid="uid://xw3evgkwr0pf"
+path.s3tc="res://.godot/imported/stadium.jpg-7217eac2def3491091e3128ffc7a5f6f.s3tc.ctex"
+path.etc2="res://.godot/imported/stadium.jpg-7217eac2def3491091e3128ffc7a5f6f.etc2.ctex"
+metadata={
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
+"vram_texture": true
+}
 
 [deps]
 
 source_file="res://world/tex/stadium.jpg"
+dest_files=["res://.godot/imported/stadium.jpg-7217eac2def3491091e3128ffc7a5f6f.s3tc.ctex", "res://.godot/imported/stadium.jpg-7217eac2def3491091e3128ffc7a5f6f.etc2.ctex"]
 
 [params]
 

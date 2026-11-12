@@ -14,8 +14,8 @@ void vertex() {
 void fragment() {
 	vec2 uv = vec2((wp.x + half_width) / (2.0 * half_width), (wp.z - z_start) / (z_end - z_start));
 	vec3 col = texture(albedo_tex, uv).rgb;
-	// Lift the photo a touch so it reads as sunlit clay under the game's lighting.
-	ALBEDO = col * 1.05;
+	// The photo is pale and already lit; scale it down to a real clay albedo.
+	ALBEDO = col * 0.56;
 	ROUGHNESS = 0.95;
 	SPECULAR = 0.08;
 }
