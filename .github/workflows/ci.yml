@@ -1,0 +1,68 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+env:
+  GODOT_VERSION: 4.7.1
+  GODOT_BASE: https://github.com/godotengine/godot-builds/releases/download
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Godot and export templates
+        run: |
+          curl -sSL -o godot.zip "$GODOT_BASE/$GODOT_VERSION-stable/Godot_v$GODOT_VERSION-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          sudo mv "Godot_v$GODOT_VERSION-stable_linux.x86_64" /usr/local/bin/godot
+          curl -sSL -o templates.tpz "$GODOT_BASE/$GODOT_VERSION-stable/Godot_v$GODOT_VERSION-stable_export_templates.tpz"
+          T="$HOME/.local/share/godot/export_templates/$GODOT_VERSION.stable"
+          mkdir -p "$T"
+          unzip -qj templates.tpz 'templates/web_*' 'templates/android_debug.apk' 'templates/android_release.apk' 'templates/version.txt' -d "$T"
+          rm godot.zip templates.tpz
+
+      - name: Import project
+        run: godot --headless --import
+
+      - name: Run tests
+        run: godot --headless -s tests/run_tests.gd
+
+      - name: Export web build
+        run: |
+          mkdir -p build/web
+          godot --headless --export-release Web build/web/index.html
+
+      - name: Configure Android export
+        run: |
+          mkdir -p "$HOME/.android" "$HOME/.config/godot"
+          keytool -genkeypair -keyalg RSA -alias androiddebugkey -keypass android \
+            -keystore "$HOME/.android/debug.keystore" -storepass android \
+            -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
+          cat > "$HOME/.config/godot/editor_settings-4.7.tres" <<SETTINGS
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME_17_X64"
+          export/android/debug_keystore = "$HOME/.android/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          SETTINGS
+
+      - name: Export Android debug APK
+        run: |
+          godot --headless --export-debug Android build/swipe-cricket-debug.apk
+          test -s build/swipe-cricket-debug.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swipe-cricket-debug-apk
+          path: build/swipe-cricket-debug.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: swipe-cricket-web
+          path: build/web
