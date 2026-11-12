@@ -11,6 +11,7 @@ var _big: Label
 var _shot: Label
 var _detail: Label
 var _hint: Label
+var _hint_panel: PanelContainer
 var _fps: Label
 var _meter: TimingMeter
 var _trail: Line2D
@@ -24,12 +25,31 @@ func _ready() -> void:
 	_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_root)
 
-	var bar := ColorRect.new()
-	bar.color = Color(0.03, 0.07, 0.14, 0.78)
+	# Top bar: deep navy fading slightly lighter, with a thin glowing accent line underneath.
+	var grad := Gradient.new()
+	grad.set_color(0, Color(0.03, 0.07, 0.17, 0.94))
+	grad.set_color(1, Color(0.07, 0.16, 0.32, 0.86))
+	var gt := GradientTexture2D.new()
+	gt.gradient = grad
+	gt.fill_from = Vector2(0, 0)
+	gt.fill_to = Vector2(0, 1)
+	gt.width = 8
+	gt.height = 64
+	var bar := TextureRect.new()
+	bar.texture = gt
+	bar.stretch_mode = TextureRect.STRETCH_SCALE
+	bar.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	bar.offset_bottom = 118
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(bar)
+	var accent := ColorRect.new()
+	accent.color = Color(0.38, 0.72, 1.0, 0.85)
+	accent.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	accent.offset_top = 118
+	accent.offset_bottom = 122
+	accent.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(accent)
 	_mode = _label(26, Color(0.62, 0.78, 1.0), Control.PRESET_TOP_LEFT, Vector2(28, 22))
 	_mode.text = "NETS"
 	_score = _label(58, Color.WHITE, Control.PRESET_TOP_LEFT, Vector2(28, 44))
@@ -43,7 +63,40 @@ func _ready() -> void:
 	_big = _center_label(120, Color.WHITE, 0.27)
 	_shot = _center_label(40, Color.WHITE, 0.375)
 	_detail = _center_label(28, Color(0.85, 0.92, 1.0), 0.415)
-	_hint = _center_label(26, Color(1, 1, 1, 0.92), 0.88)
+	# Swipe hint in a rounded glass panel near the bottom.
+	_hint_panel = PanelContainer.new()
+	var hsb := StyleBoxFlat.new()
+	hsb.bg_color = Color(0.05, 0.10, 0.18, 0.72)
+	hsb.set_corner_radius_all(22)
+	hsb.border_color = Color(1, 1, 1, 0.18)
+	hsb.set_border_width_all(2)
+	hsb.content_margin_left = 28
+	hsb.content_margin_right = 28
+	hsb.content_margin_top = 18
+	hsb.content_margin_bottom = 20
+	hsb.shadow_color = Color(0, 0, 0, 0.35)
+	hsb.shadow_size = 12
+	_hint_panel.add_theme_stylebox_override("panel", hsb)
+	_hint_panel.anchor_left = 0.0
+	_hint_panel.anchor_right = 1.0
+	_hint_panel.anchor_top = 1.0
+	_hint_panel.anchor_bottom = 1.0
+	_hint_panel.offset_left = 24
+	_hint_panel.offset_right = -24
+	_hint_panel.offset_top = -70
+	_hint_panel.offset_bottom = -70
+	_hint_panel.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_hint_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hint_panel.visible = false
+	_root.add_child(_hint_panel)
+	_hint = Label.new()
+	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_hint.add_theme_font_size_override("font_size", 27)
+	_hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.95))
+	_hint.add_theme_constant_override("line_spacing", 6)
+	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hint_panel.add_child(_hint)
 
 	_meter = TimingMeter.new()
 	_meter.anchor_left = 0.5
@@ -135,6 +188,7 @@ func set_delivery(text: String) -> void:
 
 func set_hint(text: String) -> void:
 	_hint.text = text
+	_hint_panel.visible = text != ""
 
 func clear_result() -> void:
 	_big.text = ""
