@@ -93,6 +93,19 @@ static func skill_of(order: int) -> BatterSkill:
 func striker_skill() -> BatterSkill:
 	return skill_of(striker)
 
+## Remember where the striker hit it, for the fielding captain: degrees from straight
+## (+ is the off side), metres travelled, runs scored.
+func note_shot(angle_deg: float, distance: float, scored: int) -> void:
+	var bat: Dictionary = batters[striker]
+	var shots: Array = bat.get("shots", [])
+	shots.append([snappedf(angle_deg, 0.1), snappedf(distance, 0.1), scored])
+	if shots.size() > Fielding.SHOT_MEMORY:
+		shots.pop_front()
+	bat["shots"] = shots
+
+func striker_shots() -> Array:
+	return batters[striker].get("shots", [])
+
 func striker_name() -> String:
 	return batters[striker].name
 

@@ -112,7 +112,7 @@ func _build_fielders() -> void:
 ## Spinners get a keeper up at the stumps and a long-on instead of a slip.
 func _set_field() -> void:
 	_spinner_field = match_state.bowler_style() == "off" or match_state.bowler_style() == "leg"
-	field = Fielding.layout(_spinner_field, match_state.over_index() < 6)
+	field = Fielding.layout(_spinner_field, match_state.over_index() < 6, match_state.striker_shots())
 	for i in fielders.size():
 		var f := fielders[i]
 		# The last spot is the bowler, who is already on the pitch.
@@ -157,13 +157,23 @@ func _next_ball() -> void:
 	machine.state = match_state.machine_state
 	var d := machine.next_for(match_state.bowler_style(), match_state.over_index())
 	match_state.machine_state = machine.state
+	# The captain sets the field every ball, for whoever is on strike and what they have
+	# been doing. Say so when somebody moves.
 	var new_over := match_state.over_index() != _field_over
-	if new_over:
-		_field_over = match_state.over_index()
-		_set_field()
+	_field_over = match_state.over_index()
+	var before := {}
+	for sp in field:
+		before[sp.name] = true
+	_set_field()
+	var moved := []
+	for sp in field:
+		if not before.has(sp.name):
+			moved.append(sp.name)
 	_start_delivery(d)
 	if new_over:
 		hud.set_delivery("%s to bowl  ·  %s" % [match_state.bowler_name(), _style_name(match_state.bowler_style())])
+	elif not moved.is_empty() and not before.is_empty():
+		hud.set_delivery("FIELD CHANGE  ·  %s" % ", ".join(moved.slice(0, 2)))
 	_reset_fielders()
 	umpire.give(Umpire.Sig.NONE)
 	_refresh_hud()
@@ -349,6 +359,8 @@ func _score_hit() -> void:
 	state = State.DEAD
 	timer = 1.6
 	var who := _surname(match_state.striker_name())
+	if r != null and pending != null and pending.exit != null:
+		match_state.note_shot(rad_to_deg(atan2(pending.exit.vel.x, -pending.exit.vel.z)), r.distance, 0 if r.caught else r.runs)
 	if r != null and r.caught:
 		var how := ("c %s b %s" % [r.fielder_name, _surname(match_state.bowler_name())]) if r.fielder_name != "bowler" \
 			else "c & b %s" % _surname(match_state.bowler_name())

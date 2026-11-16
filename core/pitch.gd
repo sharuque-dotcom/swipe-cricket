@@ -15,12 +15,26 @@ const STUMP_HEIGHT := 0.711
 
 const FIELD_CENTRE := Vector3(0.0, 0.0, -LENGTH * 0.5)
 const BOUNDARY_RADIUS := 65.0
+## The 30-yard circle. Fielding restrictions count who stands outside it.
+const RING_RADIUS := 27.43
 
 static func on_pitch(p: Vector3) -> bool:
 	return absf(p.x) <= HALF_WIDTH and p.z >= BOWLER_STUMPS_Z - 1.22 and p.z <= 1.22
 
 static func distance_from_centre(p: Vector3) -> float:
 	return Vector2(p.x - FIELD_CENTRE.x, p.z - FIELD_CENTRE.z).length()
+
+static func inside_ring(p: Vector3) -> bool:
+	return distance_from_centre(p) <= RING_RADIUS
+
+## How far along a ray from `from` (heading `dir`, flat and unit length) a circle of
+## `radius` about the middle of the ground is.
+static func ray_to_circle(from: Vector3, dir: Vector3, radius: float) -> float:
+	var o := Vector2(from.x - FIELD_CENTRE.x, from.z - FIELD_CENTRE.z)
+	var d := Vector2(dir.x, dir.z)
+	var b := o.dot(d)
+	var disc := b * b - (o.length_squared() - radius * radius)
+	return -b + sqrt(maxf(disc, 0.0))
 
 static func beyond_boundary(p: Vector3) -> bool:
 	return distance_from_centre(p) >= BOUNDARY_RADIUS

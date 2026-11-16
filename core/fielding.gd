@@ -68,37 +68,144 @@ class Result:
 	var field_dir := Vector3.ZERO # which way the ball is travelling when it reaches them
 	var end_pos := Vector3.ZERO   # where the ball is when play ends (fielded, at rest, or over the rope)
 
-## A T20 field. Batter's stumps are at the origin; the bowler runs in from -Z; +X is off side.
-static func layout(spinner: bool, powerplay: bool = true) -> Array[Spot]:
+# ---- Setting the field ----------------------------------------------------------------
+# Angles are in degrees from the batter: 0 is straight back past the bowler, +90 square
+# on the off side, -90 square on the leg side, 180 directly behind.
+
+const MAX_OUT_POWERPLAY := 2   # fielders allowed outside the ring in overs 1 to 6
+const MAX_OUT := 5             # and for the rest of the innings
+const DEEP_IN_FROM_ROPE := 6.5
+const INFIELD_DIST := 24.0     # how far from the bat the ring fielders stand, at most
+const INFIELD_INSIDE_RING := 4.0
+const SHOT_MEMORY := 12        # how many of a batter's shots the captain remembers
+const SHOT_FADE := 0.86        # each older shot counts this much less
+const DEEP_SHOT := 36.0        # a shot that travels this far needs a man in the deep
+
+# Where a captain starts before they have seen the batter: [angle, weight].
+const PRIOR_DEEP := [[-128.0, 1.00], [128.0, 0.92], [-80.0, 0.80], [14.0, 0.74], [48.0, 0.66],
+	[-42.0, 0.62], [-14.0, 0.58], [88.0, 0.50]]
+const PRIOR_IN := [[16.0, 1.00], [-16.0, 0.98], [46.0, 0.96], [80.0, 0.90], [-46.0, 0.88],
+	[-84.0, 0.74], [122.0, 0.56], [-122.0, 0.52]]
+
+static func _bump(a: float, b: float, width: float) -> float:
+	var d := absf(wrapf(a - b, -180.0, 180.0))
+	return exp(-0.5 * (d / width) * (d / width))
+
+static func _demand(angle: float, prior: Array, shots: Array, deep: bool) -> float:
+	var v := 0.0
+	for p: Array in prior:
+		v += float(p[1]) * _bump(angle, float(p[0]), 13.0)
+	# Recent shots pull fielders toward where this batter scores, boundaries most of all.
+	var n := shots.size()
+	for i in n:
+		var sh: Array = shots[i]
+		var far := float(sh[1]) >= DEEP_SHOT or int(sh[2]) >= 4
+		if far != deep:
+			continue
+		var w := (0.55 + 0.30 * float(sh[2])) * pow(SHOT_FADE, n - 1 - i)
+		v += w * _bump(angle, float(sh[0]), 15.0)
+	return v
+
+## Picks `count` angles: the busiest first, each pick thinning out the demand around it
+## so the next man goes somewhere else.
+static func _pick(count: int, lo: float, hi: float, prior: Array, shots: Array, deep: bool, spread: float) -> Array:
+	var angles := []
+	var value := []
+	var a := -178.0
+	while a <= 178.0:
+		if absf(a) >= lo and absf(a) <= hi:
+			angles.append(a)
+			value.append(_demand(a, prior, shots, deep))
+		a += 4.0
+	var out := []
+	for _k in count:
+		var best := 0
+		for i in angles.size():
+			if value[i] > value[best]:
+				best = i
+		var at: float = angles[best]
+		out.append(at)
+		for i in angles.size():
+			value[i] *= 1.0 - 0.97 * _bump(angles[i], at, spread)
+	return out
+
+static func _dir(angle: float) -> Vector3:
+	var r := deg_to_rad(angle)
+	return Vector3(sin(r), 0.0, -cos(r))
+
+static func position_name(angle: float, deep: bool) -> String:
+	var off := angle >= 0.0
+	var a := absf(angle)
+	if deep:
+		if a < 26.0:
+			return "long-off" if off else "long-on"
+		if a < 62.0:
+			return "deep cover" if off else "deep midwicket"
+		if a < 104.0:
+			return "deep point" if off else "deep square leg"
+		return "third man" if off else "fine leg"
+	if a < 28.0:
+		return "mid-off" if off else "mid-on"
+	if a < 62.0:
+		return "cover" if off else "midwicket"
+	if a < 104.0:
+		return "point" if off else "square leg"
+	return "short third" if off else "short fine leg"
+
+## A T20 field, set to the laws and to the batter. Batter's stumps are at the origin; the
+## bowler runs in from -Z; +X is the off side. Never more than two outside the ring in the
+## powerplay, never more than five after it. `shots` is the striker's recent scoring shots
+## as [angle in degrees, metres travelled, runs]; fielders move to where they have been
+## hitting it, which leaves the gaps somewhere they have not.
+## Order: keeper first, bowler last.
+static func layout(spinner: bool, powerplay: bool = true, shots: Array = []) -> Array[Spot]:
 	var f: Array[Spot] = []
+	var close := 0
 	if spinner:
 		# The keeper stays back to the spinners too, out of the batter's eyeline.
 		f.append(Spot.new("keeper", 0.3, KEEPER_BACK_SPIN, Kind.KEEPER, 1.3))
-		f.append(Spot.new("long-on", -22.0, -66.0, Kind.DEEP, 1.0))
 	else:
 		f.append(Spot.new("keeper", 0.4, KEEPER_BACK_PACE, Kind.KEEPER, 1.5))
 		if powerplay:
 			f.append(Spot.new("slip", 2.4, 15.8, Kind.CLOSE, 1.3))
-		else:
-			f.append(Spot.new("deep cover", 40.0, -40.0, Kind.DEEP, 1.0))
-	# After the powerplay, point drops back and a spinner gets a deep midwicket too.
-	if powerplay:
-		f.append(Spot.new("point", 21.0, 2.0, Kind.INFIELD, 1.0))
-	else:
-		f.append(Spot.new("deep point", 52.0, -2.0, Kind.DEEP, 1.0))
-	f.append(Spot.new("cover", 18.0, -15.0, Kind.INFIELD, 1.0))
-	f.append(Spot.new("mid-off", 9.0, -27.0, Kind.INFIELD, 1.0))
-	f.append(Spot.new("mid-on", -9.0, -27.0, Kind.INFIELD, 1.0))
-	if spinner and not powerplay:
-		f.append(Spot.new("deep midwicket", -42.0, -38.0, Kind.DEEP, 1.0))
-	else:
-		f.append(Spot.new("midwicket", -20.0, -13.0, Kind.INFIELD, 1.0))
-	f.append(Spot.new("deep square leg", -56.0, 4.0, Kind.DEEP, 1.0))
-	f.append(Spot.new("fine leg", -28.0, 46.0, Kind.DEEP, 1.0))
-	f.append(Spot.new("long-off", 22.0, -68.0, Kind.DEEP, 1.0))
+			close = 1
+	var recent := shots.slice(maxi(0, shots.size() - SHOT_MEMORY))
+	var n_out := MAX_OUT_POWERPLAY if powerplay else MAX_OUT
+	var n_in := 9 - n_out - close
+	var bat := Vector3(0.0, 0.0, -1.0)
+	var taken := {}
+	for a: float in _pick(n_out, 0.0, 172.0, PRIOR_DEEP, recent, true, 24.0):
+		var d := _dir(a)
+		var p := bat + d * Pitch.ray_to_circle(bat, d, Pitch.BOUNDARY_RADIUS - DEEP_IN_FROM_ROPE)
+		f.append(Spot.new(_unique(position_name(a, true), taken), p.x, p.z, Kind.DEEP, 1.0))
+	# Nobody in the ring stands behind the keeper or in the bowler's way.
+	for a: float in _pick(n_in, 9.0, 140.0, PRIOR_IN, recent, false, 19.0):
+		var d := _dir(a)
+		var dist := minf(INFIELD_DIST, Pitch.ray_to_circle(bat, d, Pitch.RING_RADIUS) - INFIELD_INSIDE_RING)
+		var p := bat + d * dist
+		f.append(Spot.new(_unique(position_name(a, false), taken), p.x, p.z, Kind.INFIELD, 1.0))
 	# The bowler, in the follow-through, takes return catches.
 	f.append(Spot.new("bowler", 0.6, -17.5, Kind.INFIELD, 0.55))
 	return f
+
+static func _unique(n: String, taken: Dictionary) -> String:
+	if not taken.has(n):
+		taken[n] = 1
+		return n
+	taken[n] += 1
+	var alt: String = {"long-off": "wide long-off", "long-on": "wide long-on", "deep cover": "deep extra cover",
+		"deep midwicket": "cow corner", "deep point": "deep backward point", "deep square leg": "deep backward square",
+		"third man": "fine third man", "fine leg": "long leg", "mid-off": "extra cover", "mid-on": "wide mid-on",
+		"cover": "cover point", "midwicket": "forward square leg", "point": "backward point",
+		"square leg": "backward square leg", "short third": "gully", "short fine leg": "leg slip"}.get(n, n)
+	return alt if taken[n] == 2 else "%s %d" % [n, taken[n]]
+
+static func outside_ring(field: Array) -> int:
+	var n := 0
+	for s in field:
+		if not Pitch.inside_ring(s.pos):
+			n += 1
+	return n
 
 static func _runs_for(stop_time: float, at: Vector3) -> int:
 	var throw := THROW_RELEASE + Vector2(at.x, at.z).length() / THROW_SPEED

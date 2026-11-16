@@ -53,7 +53,8 @@ func _play(sigma: float, style: String, sd: int) -> Dictionary:
 					break
 				prev = s.pos
 		else:
-			var f := Fielding.evaluate(r.exit, Fielding.layout(style_b == "off" or style_b == "leg", over < 6))
+			var f := Fielding.evaluate(r.exit, Fielding.layout(style_b == "off" or style_b == "leg", over < 6, m.striker_shots()))
+			m.note_shot(rad_to_deg(atan2(r.exit.vel.x, -r.exit.vel.z)), f.distance, 0 if f.caught else f.runs)
 			if f.caught:
 				out = "c " + f.fielder_name
 			else:

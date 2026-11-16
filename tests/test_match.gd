@@ -8,6 +8,12 @@ func _exit(dir_deg: float, elev_deg: float, speed: float) -> BallPhysics.State:
 	s.vel = (Vector3(sin(a), 0.0, -cos(a)) * cos(e) + Vector3.UP * sin(e)) * speed
 	return s
 
+func _spot(field: Array, name: String) -> Fielding.Spot:
+	for s in field:
+		if s.name == name:
+			return s
+	return null
+
 func test_skier_to_a_fielder_is_caught() -> void:
 	# A gentle lofted hit that comes down near mid-on.
 	var field := Fielding.layout(false)
@@ -20,12 +26,16 @@ func test_big_hit_is_six() -> void:
 
 func test_ground_shot_through_gap_is_four() -> void:
 	# Along the ground between cover and mid-off.
-	var r := Fielding.evaluate(_exit(38.0, 2.0, 34.0), Fielding.layout(false))
+	var field := Fielding.layout(false)
+	var a := _spot(field, "mid-off").pos
+	var b := _spot(field, "cover").pos
+	var mid := (rad_to_deg(atan2(a.x, -(a.z + 1.0))) + rad_to_deg(atan2(b.x, -(b.z + 1.0)))) * 0.5
+	var r := Fielding.evaluate(_exit(mid, 2.0, 34.0), field)
 	check(r.boundary and not r.six, "hard ground drive through the covers gap (got %d runs, %s)" % [r.runs, r.fielder_name])
 
 func test_push_to_fielder_is_no_run() -> void:
 	# Soft push straight at mid-off.
-	var mo := Fielding.layout(false)[4].pos
+	var mo := _spot(Fielding.layout(false), "mid-off").pos
 	var dir := rad_to_deg(atan2(mo.x - 0.1, -(mo.z + 1.2)))
 	var r := Fielding.evaluate(_exit(dir, 1.0, 13.0), Fielding.layout(false))
 	check(not r.boundary and not r.caught and r.runs <= 1, "push to mid-off: %d runs" % r.runs)
@@ -84,7 +94,7 @@ func test_field_has_eleven_and_keeper_stands_back() -> void:
 			check(f[0].kind == Fielding.Kind.KEEPER and f[0].pos.z > 5.0, "keeper stands back, behind the camera")
 
 func test_fielded_ball_reports_where_it_is_taken() -> void:
-	var mo := Fielding.layout(false)[4].pos
+	var mo := _spot(Fielding.layout(false), "mid-off").pos
 	var dir := rad_to_deg(atan2(mo.x - 0.1, -(mo.z + 1.2)))
 	var r := Fielding.evaluate(_exit(dir, 1.0, 13.0), Fielding.layout(false))
 	check(r.fielder >= 0 and r.field_dir.length() > 0.9, "fielder and ball direction are known")
@@ -96,3 +106,33 @@ func test_batting_card_gets_weaker_down_the_order() -> void:
 	var tail := MatchState.skill_of(10)
 	check(top.bat_speed_max() > tail.bat_speed_max() * 1.2, "the power hitter swings much harder than number eleven")
 	check(top.sweet_scale() > tail.sweet_scale(), "and has a bigger sweet spot")
+
+func test_fielding_restrictions_are_never_broken() -> void:
+	# Whatever the batter has been doing, the field stays legal.
+	var histories := [[], [[0.0, 80.0, 6], [5.0, 78.0, 6], [-8.0, 75.0, 4], [10.0, 70.0, 4], [-30.0, 66.0, 4], [40.0, 70.0, 6]],
+		[[90.0, 66.0, 4], [85.0, 20.0, 1], [-90.0, 66.0, 4], [-120.0, 60.0, 4], [130.0, 62.0, 4], [60.0, 68.0, 4], [-60.0, 70.0, 6]]]
+	for shots: Array in histories:
+		for spinner in [false, true]:
+			var pp := Fielding.layout(spinner, true, shots)
+			var late := Fielding.layout(spinner, false, shots)
+			check(pp.size() == 11 and late.size() == 11, "eleven in the field")
+			check(Fielding.outside_ring(pp) == Fielding.MAX_OUT_POWERPLAY, "powerplay: %d outside the ring" % Fielding.outside_ring(pp))
+			check(Fielding.outside_ring(late) == Fielding.MAX_OUT, "after the powerplay: %d outside the ring" % Fielding.outside_ring(late))
+			for s in late:
+				check(not Pitch.beyond_boundary(s.pos), "%s stands inside the rope" % s.name)
+
+func test_field_follows_the_batter() -> void:
+	# Someone who keeps hitting over cover gets a man out there, and loses one elsewhere.
+	var plain := Fielding.layout(false, true)
+	var shots := [[45.0, 70.0, 4], [50.0, 72.0, 6], [42.0, 68.0, 4]]
+	var moved := Fielding.layout(false, true, shots)
+	var covered := func(field: Array) -> bool:
+		for s in field:
+			if s.kind == Fielding.Kind.DEEP:
+				var a := rad_to_deg(atan2(s.pos.x, -(s.pos.z + 1.0)))
+				if absf(a - 46.0) < 14.0:
+					return true
+		return false
+	check(not covered.call(plain), "no deep cover to begin with in the powerplay")
+	check(covered.call(moved), "a man goes back on the cover boundary")
+	check(Fielding.outside_ring(moved) == Fielding.MAX_OUT_POWERPLAY, "and still only two are out")

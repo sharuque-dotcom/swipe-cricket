@@ -31,6 +31,9 @@ Swipe to play a shot. Lift your finger just before the ball arrives.
 - Swinging harder, and going aerial, both shrink the green zone. A mistimed slog goes up, not out.
 - Batters differ. The scoreboard shows the striker's role and their POWER and TIMING out of
   five; the tail can neither time it nor hit it far.
+- Fielding restrictions apply: two outside the ring in overs 1 to 6, five after that.
+- The field is set for each batter. Fielders move to where the striker has been hitting it, so
+  the gaps open somewhere else and the same shot stops paying.
 - Eleven in the field: nine fielders, the keeper and the bowler, shown on the radar bottom-left.
   A fielded ball stays in the fielder's hands and is thrown in to the keeper.
 
