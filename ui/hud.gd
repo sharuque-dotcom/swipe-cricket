@@ -63,6 +63,8 @@ var _card_col: VBoxContainer
 var _prompt: Control
 var _big_tween: Tween
 var _safe_top := 0.0
+var _wipe: Wipe
+var _replay: PanelContainer
 
 func _ready() -> void:
 	_root = Control.new()
@@ -224,6 +226,26 @@ func _ready() -> void:
 	_fps.visible = OS.is_debug_build()
 	_root.add_child(_fps)
 
+	# "REPLAY" tag, and the full-screen call that cuts to it.
+	_replay = PanelContainer.new()
+	var rsb := pill_box(RED, 10)
+	rsb.content_margin_left = 16
+	rsb.content_margin_right = 16
+	rsb.content_margin_top = 2
+	rsb.content_margin_bottom = 5
+	_replay.add_theme_stylebox_override("panel", rsb)
+	_replay.offset_left = MARGIN + 4
+	_replay.offset_top = _safe_top + 336
+	_replay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_replay.visible = false
+	_replay.add_child(_text("REPLAY", "bold", 28, TEXT))
+	_root.add_child(_replay)
+	_wipe = Wipe.new()
+	_wipe.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_wipe.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_wipe.visible = false
+	_root.add_child(_wipe)
+
 	# Modal card (match intro, result, session summary) over a dimmed pitch.
 	_scrim = ColorRect.new()
 	_scrim.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -370,6 +392,21 @@ func show_timing(n: float, label: String, ms: float, perfect: float = Tuning.PER
 	_meter.visible = true
 	_meter.queue_redraw()
 
+## Full-screen call: a slanted panel sweeps across, holds the word, and sweeps off.
+func wipe(text: String, sub: String, c: Color, hold: float = 0.55) -> void:
+	clear_result()
+	_wipe.play(text, sub, c, hold)
+
+func wipe_cancel() -> void:
+	_wipe.visible = false
+
+## True while the wipe fully covers the screen: the moment to cut the camera.
+func wipe_covering() -> bool:
+	return _wipe.visible and _wipe.covering()
+
+func set_replay(on: bool) -> void:
+	_replay.visible = on
+
 # ---- Cards ----------------------------------------------------------------------------
 
 ## A modal card. Keys, all optional: kicker, title, sub, accent (Color),
@@ -490,6 +527,75 @@ func trail_points(points: PackedVector2Array) -> void:
 
 func trail_end() -> void:
 	_trail.remove_meta("live")
+
+
+class Wipe:
+	extends Control
+	const IN := 0.20
+	const OUT := 0.24
+	var text := ""
+	var sub := ""
+	var color := Color.WHITE
+	var hold := 0.55
+	var _t0 := 0
+
+	func play(t: String, s: String, c: Color, h: float) -> void:
+		text = t
+		sub = s
+		color = c
+		hold = h
+		_t0 = Time.get_ticks_msec()
+		visible = true
+		queue_redraw()
+
+	func _age() -> float:
+		return (Time.get_ticks_msec() - _t0) / 1000.0
+
+	func covering() -> bool:
+		var a := _age()
+		return a >= IN and a <= IN + hold
+
+	func _process(_delta: float) -> void:
+		if not visible:
+			return
+		if _age() > IN + hold + OUT:
+			visible = false
+		queue_redraw()
+
+	func _draw() -> void:
+		var a := _age()
+		var w := size.x
+		var h := size.y
+		var skew := h * 0.22
+		# Leading edge sweeps in from the left; trailing edge follows it off to the right.
+		var lead := w + skew
+		var trail := -skew
+		if a < IN:
+			lead = lerpf(-skew, w + skew, 1.0 - pow(1.0 - a / IN, 3.0))
+		elif a > IN + hold:
+			trail = lerpf(-skew, w + skew, pow((a - IN - hold) / OUT, 2.0))
+		var dark := color.darkened(0.55)
+		draw_colored_polygon(PackedVector2Array([Vector2(trail + skew, 0), Vector2(lead + skew, 0), Vector2(lead - skew, h), Vector2(trail - skew, h)]), dark)
+		var band_c := color
+		var c := Vector2(w * 0.5, h * 0.46)
+		draw_set_transform(c, -0.16, Vector2.ONE)
+		var bw := w * 1.6
+		var left := maxf(-bw * 0.5, trail - c.x - skew)
+		var right := minf(bw * 0.5, lead - c.x + skew)
+		if right > left:
+			draw_rect(Rect2(left, -150, right - left, 300), band_c)
+			draw_rect(Rect2(left, -172, right - left, 8), Color(1, 1, 1, 0.9))
+			draw_rect(Rect2(left, 164, right - left, 8), Color(1, 1, 1, 0.9))
+		var k := clampf((a - IN * 0.6) / 0.12, 0.0, 1.0) * clampf((IN + hold + OUT * 0.5 - a) / 0.12, 0.0, 1.0)
+		if k > 0.0:
+			var fb := Hud.font("bold")
+			var sz := 250 if text.length() <= 4 else 190
+			var ink := Hud.NAVY if color.get_luminance() > 0.6 else Color.WHITE
+			var slide := (1.0 - k) * -80.0
+			draw_string(fb, Vector2(-w * 0.5 + slide, sz * 0.34), text, HORIZONTAL_ALIGNMENT_CENTER, w, sz, Color(ink.r, ink.g, ink.b, k))
+			if sub != "":
+				draw_string(Hud.font("semi"), Vector2(-w * 0.5 - slide, 236), sub.to_upper(), HORIZONTAL_ALIGNMENT_CENTER, w, 34, Color(1, 1, 1, k))
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 
 ## The scoreboard: a score card, and in a match a batting card and a bowling card under it.

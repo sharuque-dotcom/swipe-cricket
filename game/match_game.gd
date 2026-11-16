@@ -28,6 +28,25 @@ var _throw_from := Vector3.ZERO
 var _throw_time := 0.0
 var _hold_pos := Vector3.ZERO
 
+var umpire: Umpire
+var non_striker: NonStriker
+var _field_over := -1         # the over the field was last set for
+
+# A boundary or a wicket plays out as: the moment live, the umpire's signal, a full-screen
+# call, then a slow-motion replay from stump height.
+const SIGNAL_TIME := 0.95
+var _event := {}
+var _event_t := -1.0
+var _cut := false             # camera is on the umpire
+var _wiped := false
+var _replay_pending := false
+var _replaying := false
+var _replay_ref := 0.0        # ball-clock time of the moment being replayed
+var _replay_end := 0.0
+var _replay_swung := false
+var _replay_catch_cam := Vector3.ZERO
+var _bowled_at := 0.0
+
 func _new_session() -> void:
 	if fielders.is_empty():
 		_build_fielders()
@@ -48,6 +67,13 @@ func _new_session() -> void:
 	timer = 0.0
 	phase = Phase.INTRO
 	hit_view_cap = 6.0
+	_field_over = -1
+	_replay_pending = false
+	_replaying = false
+	_event_t = -1.0
+	_cut = false
+	time_scale_base = 1.0
+	hud.set_replay(false)
 	hud.set_hint("")
 	hud.clear_result()
 	hud.set_delivery("")
@@ -72,6 +98,16 @@ func _build_fielders() -> void:
 		add_child(f)
 		f.build(RED_KIT, Color(1, 1, 1), i == 0)
 		fielders.append(f)
+	umpire = Umpire.new()
+	umpire.position = Vector3(0.0, 0.0, Pitch.BOWLER_STUMPS_Z - 1.8)
+	umpire.rotation.y = PI
+	add_child(umpire)
+	umpire.build()
+	non_striker = NonStriker.new()
+	non_striker.position = Vector3(-1.25, 0.0, Pitch.BOWLER_CREASE_Z - 0.45)
+	non_striker.rotation.y = PI
+	add_child(non_striker)
+	non_striker.build(BLUE_KIT, Color(1.0, 0.80, 0.15))
 
 ## Spinners get a keeper up at the stumps and a long-on instead of a slip.
 func _set_field() -> void:
@@ -85,11 +121,27 @@ func _set_field() -> void:
 		if used:
 			f.reset(field[i].pos)
 	hud.radar_field(field)
+	# Names on shirts: the bowler's own, and the rest of the Red eleven round the field.
+	var others := []
+	for n: String in MatchState.RED:
+		if n != match_state.bowler_name():
+			others.append(n)
+	for i in fielders.size():
+		_shirt(fielders[i].figure, others[i % others.size()])
+	_shirt(bowler.figure, match_state.bowler_name())
+
+func _shirt(figure: Figure, full_name: String) -> void:
+	figure.set_shirt(_surname(full_name), 1 + absi(full_name.hash()) % 98)
 
 func _batter_skill() -> BatterSkill:
 	return match_state.striker_skill()
 
 func _next_ball() -> void:
+	_event_t = -1.0
+	_cut = false
+	if _replay_pending:
+		_start_replay()
+		return
 	if match_state.finished():
 		_show_result()
 		return
@@ -105,14 +157,124 @@ func _next_ball() -> void:
 	machine.state = match_state.machine_state
 	var d := machine.next_for(match_state.bowler_style(), match_state.over_index())
 	match_state.machine_state = machine.state
+	var new_over := match_state.over_index() != _field_over
+	if new_over:
+		_field_over = match_state.over_index()
+		_set_field()
 	_start_delivery(d)
+	if new_over:
+		hud.set_delivery("%s to bowl  ·  %s" % [match_state.bowler_name(), _style_name(match_state.bowler_style())])
+	_reset_fielders()
+	umpire.give(Umpire.Sig.NONE)
+	_refresh_hud()
+
+func _reset_fielders() -> void:
 	for i in fielders.size():
 		if fielders[i].visible:
 			fielders[i].reset(field[i].pos)
-	_refresh_hud()
+	_taker = null
+	_take_at = -1.0
+	_held = false
+	_throws = false
+	_throw_time = 0.0
 
 func _refresh_hud() -> void:
 	hud.set_match(match_state)
+	_shirt(batter.figure, match_state.striker_name())
+	_shirt(non_striker.figure, str(match_state.batters[match_state.non_striker].name))
+
+## Queue the umpire's signal, the full-screen call and the replay for a big moment.
+## `lead` is how long the live view runs on first.
+func _big_moment(text: String, sub: String, c: Color, sig: Umpire.Sig, lead: float) -> void:
+	_event = {"text": text, "sub": sub, "color": c, "sig": sig, "lead": lead}
+	_event_t = 0.0
+	_cut = false
+	_wiped = false
+	_replay_pending = true
+	# The next thing (the replay) starts while the call still covers the screen.
+	timer = lead + SIGNAL_TIME + Hud.Wipe.IN + 0.15
+
+func _start_replay() -> void:
+	_replay_pending = false
+	_replaying = true
+	hud.clear_result()
+	hud.set_delivery("")
+	hud.set_replay(true)
+	hud.radar_clear()
+	_reset_fielders()
+	umpire.give(Umpire.Sig.NONE)
+	stadium.batter_stumps.reset()
+	batter.reset()
+	batter.backlift()
+	var hit := pending != null and pending.exit != null
+	_replay_ref = pending.contact_time if hit else _bowled_at
+	_replay_swung = pending == null
+	_replay_end = _replay_ref + 0.75
+	_replay_catch_cam = Vector3.ZERO
+	var r := summary as Fielding.Result
+	if hit and r != null:
+		if r.caught:
+			_replay_end = _replay_ref + minf(r.field_time + 0.5, 3.4)
+			# Second angle: beside the fielder, watching it come to them.
+			var away := Vector3(r.field_pos.x, 0.0, r.field_pos.z + 1.0).normalized()
+			var side := Vector3(away.z, 0.0, -away.x)
+			var at := r.field_pos + away * 3.2 + side * 3.4
+			var off := at - Pitch.FIELD_CENTRE
+			if off.length() > 66.0:
+				at = Pitch.FIELD_CENTRE + off.normalized() * 66.0
+			_replay_catch_cam = at + Vector3(0, 1.9, 0)
+		else:
+			_replay_end = _replay_ref + minf(r.end_time - pending.contact_time + 0.1, 1.7)
+	var t0 := maxf(_replay_ref - 0.42, 0.02)
+	ball = ShotResolver.state_at_time(launch, t0)
+	clock = t0
+	_last_bounces = ball.bounces
+	_trail_pos.clear()
+	state = State.FLIGHT
+	swung = true
+	ball_node.visible = true
+	blob.visible = true
+	time_scale_base = 0.3
+	_cam_look = Vector3(-0.1, 0.9, -1.1)
+
+func _end_replay() -> void:
+	_replaying = false
+	time_scale_base = 1.0
+	hud.set_replay(false)
+	hud.clear_result()
+	state = State.DEAD
+	timer = 0.02
+	_dead_for = 0.0
+
+func _update_camera(delta: float) -> void:
+	if _cam_locked:
+		return
+	if _replaying:
+		# Stump height, just outside off, looking up at the batter; then follow the ball.
+		var real := delta / maxf(Engine.time_scale, 0.1)
+		var target := Vector3(-0.1, 0.9, -1.1)
+		var from := Vector3(2.5, 0.55, 2.7)
+		if pending == null or pending.exit == null:
+			target = Vector3(0.0, 0.5, -0.2)   # bowled: stay on the stumps
+		elif state != State.FLIGHT and ball != null:
+			target = Vector3(ball.pos.x, maxf(ball.pos.y, 0.5), ball.pos.z)
+			if _replay_catch_cam != Vector3.ZERO and clock > _replay_ref + 0.5:
+				from = _replay_catch_cam
+			elif pending != null and pending.exit != null and clock > _replay_ref + 0.32:
+				# Second angle: high behind the batter, watching it go.
+				from = Vector3(0.0, 7.5, 13.0)
+		_cam_look = _cam_look.lerp(target, 1.0 - exp(-real * 7.0))
+		cam.fov = 44.0
+		cam.position = from
+		if from.distance_squared_to(_cam_look) > 0.01:
+			cam.look_at(_cam_look)
+		return
+	if _cut:
+		cam.fov = 30.0
+		cam.position = umpire.position + Vector3(0.9, 1.55, 5.2)
+		cam.look_at(umpire.position + Vector3(0.0, 1.42, 0.0))
+		return
+	super._update_camera(delta)
 
 func _evaluate_hit(exit: BallPhysics.State) -> NetsScoring.Summary:
 	var r := Fielding.evaluate(exit, field)
@@ -172,10 +334,21 @@ func _show_ball() -> void:
 		hud.radar_ball(ball.pos)
 	super._show_ball()
 
+func _connect() -> void:
+	super._connect()
+	if _replaying:
+		hud.clear_result()
+
 func _score_hit() -> void:
 	var r := summary as Fielding.Result
+	if _replaying:
+		# Let the replay run on past the catch or the rope; it ends on its own clock.
+		state = State.DEAD
+		timer = 99.0
+		return
 	state = State.DEAD
 	timer = 1.6
+	var who := _surname(match_state.striker_name())
 	if r != null and r.caught:
 		var how := ("c %s b %s" % [r.fielder_name, _surname(match_state.bowler_name())]) if r.fielder_name != "bowler" \
 			else "c & b %s" % _surname(match_state.bowler_name())
@@ -185,8 +358,8 @@ func _score_hit() -> void:
 		hud.show_shot("%s  %s" % [match_state.striker_name(), how], "%s · %d (%d)" % [pending.shot_name,
 			match_state.batters[match_state.striker].runs, match_state.batters[match_state.striker].balls + 1])
 		sfx.play("groan", -2.0)
-		timer = 2.4
 		_record(0, how)
+		_big_moment("OUT", "%s  %s" % [who, how], Hud.RED, Umpire.Sig.OUT, 0.9)
 		return
 	super._score_hit()
 	if r != null and not r.boundary and r.fielder >= 0:
@@ -196,16 +369,32 @@ func _score_hit() -> void:
 		var throw := Vector2(r.field_pos.x, r.field_pos.z).length() / Fielding.THROW_SPEED if _throws else 0.0
 		timer = clampf(wait + HOLD_BEFORE_THROW + throw + 0.5, 1.6, 3.4)
 	_record(summary.runs, "")
+	if summary.boundary:
+		_big_moment("SIX" if summary.six else "FOUR", "%s  ·  %s  ·  %d m" % [who, pending.shot_name, int(round(summary.distance))],
+			Hud.GOLD if summary.six else Hud.BLUE, Umpire.Sig.SIX if summary.six else Umpire.Sig.FOUR, 0.55)
 
 func _bowled() -> void:
+	if _replaying:
+		stadium.batter_stumps.shatter(ball.pos.x, ball.vel.length())
+		fx.burst(Vector3(ball.pos.x, 0.45, 0.0))
+		sfx.play("stumps")
+		ball.vel = Vector3(ball.vel.x * 0.2, 1.5, ball.vel.z * 0.15)
+		state = State.DEAD
+		timer = 99.0
+		return
+	_bowled_at = ball.time
+	var who := _surname(match_state.striker_name())
 	super._bowled()
-	timer = 2.4
 	var how := "b %s" % _surname(match_state.bowler_name())
 	hud.show_shot("%s  %s" % [match_state.striker_name(), how], "%d (%d)" % [match_state.batters[match_state.striker].runs,
 		match_state.batters[match_state.striker].balls + 1])
 	_record(0, how)
+	_big_moment("OUT", "%s  %s" % [who, how], Hud.RED, Umpire.Sig.OUT, 0.8)
 
 func _passed() -> void:
+	if _replaying:
+		_end_replay()
+		return
 	super._passed()
 	_keeper_takes()
 	_record(0, "")
@@ -244,18 +433,9 @@ func _record(scored: int, how_out: String) -> void:
 	if ev.over_end:
 		var m := match_state
 		phase = Phase.OVER_BREAK
-		timer = maxf(timer, 1.2) + 1.6
-		_set_field_after(before_over)
+		timer = maxf(timer, 1.2) + 0.8
 		hud.set_delivery("End of over %d" % m.over_index())
 	_refresh_hud()
-
-## The new bowler's field goes in once the ball is dead.
-func _set_field_after(_over: int) -> void:
-	var t := get_tree().create_timer(maxf(timer - 1.4, 0.3))
-	t.timeout.connect(func():
-		if is_inside_tree() and match_state != null and not match_state.finished():
-			_set_field()
-			hud.set_delivery("%s to bowl  ·  %s" % [match_state.bowler_name(), _style_name(match_state.bowler_style())]))
 
 func _style_name(s: String) -> String:
 	return {"swing": "swing", "pace": "pace", "off": "off spin", "leg": "leg spin"}.get(s, s)
@@ -294,8 +474,15 @@ func _on_swipe_started() -> void:
 				match_state = null
 				_new_session()
 			return
-	# Tap to skip the wait after a ball.
+	# Tap to skip the replay, or the wait (and any replay) after a ball.
+	if _replaying:
+		_end_replay()
+		return
 	if state == State.DEAD and _dead_for > 0.6:
+		_replay_pending = false
+		_event_t = -1.0
+		_cut = false
+		hud.wipe_cancel()
 		timer = minf(timer, 0.05)
 
 func _process(delta: float) -> void:
@@ -304,6 +491,28 @@ func _process(delta: float) -> void:
 		_dead_for += delta
 	if _held:
 		_held_for += minf(delta, 0.05)
+	# The non-striker backs up as the bowler lets go.
+	var backing := 0.0
+	if state == State.RUNUP:
+		backing = smoothstep(-0.45, 0.25, bowler.t)
+	elif state == State.FLIGHT or state == State.HIT:
+		backing = 1.0
+	non_striker.back_up(lerpf(non_striker._backing, backing, 1.0 - exp(-delta * 6.0)))
+	if _event_t >= 0.0 and state == State.DEAD and not _replaying:
+		_event_t += delta
+		if not _cut and _event_t >= _event.lead:
+			_cut = true
+			umpire.give(_event.sig)
+		if not _wiped and _event_t >= _event.lead + SIGNAL_TIME:
+			_wiped = true
+			hud.wipe(_event.text, _event.sub, _event.color)
+	if _replaying:
+		if not _replay_swung and clock >= _swing_clock:
+			_replay_swung = true
+			batter.swing(_swing_where, _swing_angle)
+		time_scale_base = 0.3 if clock < _replay_ref + 0.22 else 0.7
+		if clock >= _replay_end:
+			_end_replay()
 	if state == State.RUNUP and bowler.t > -0.6:
 		for f in fielders:
 			if f.visible:

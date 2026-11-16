@@ -34,6 +34,10 @@ Swipe to play a shot. Lift your finger just before the ball arrives.
 - Eleven in the field: nine fielders, the keeper and the bowler, shown on the radar bottom-left.
   A fielded ball stays in the fielder's hands and is thrown in to the keeper.
 
+- Fours, sixes and wickets get the full treatment: the umpire signals, a full-screen call sweeps
+  across, and a slow-motion replay runs from stump height. Tap to skip any of it.
+- Fielders dive for catches and stops at full stretch and slide to save the ball at the rope.
+
 `godot --headless -s tests/balance_sim.gd` plays whole innings with simulated players and prints
 what each style of batting scores; use it when changing `core/tuning.gd` or `core/fielding.gd`.
 

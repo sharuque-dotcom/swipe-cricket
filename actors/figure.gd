@@ -43,6 +43,13 @@ var trim := Color(1.0, 0.8, 0.1)
 var skin := Color(0.72, 0.5, 0.36)
 var pads := false
 var helmet := false
+var hat := false                 # wide-brimmed hat instead of a cap
+var trousers := Color(0, 0, 0, 0)  # leave transparent to match the kit
+
+## Heads are drawn big: these are characters, not mannequins.
+const HEAD_SCALE := 1.32
+var _name_label: Label3D
+var _number_label: Label3D
 
 var _seg := {}
 var _head: Node3D
@@ -65,7 +72,7 @@ static func mat(c: Color, rough: float = 0.75) -> StandardMaterial3D:
 
 func build() -> void:
 	var white := Color(0.95, 0.95, 0.92)
-	var legs := white if pads else kit.darkened(0.12)
+	var legs := white if pads else (trousers if trousers.a > 0.0 else kit.darkened(0.12))
 	_capsule("torso", 0.165, SPINE, kit)
 	_capsule("pelvis", 0.15, 0.16, kit.darkened(0.12))
 	for s in ["l", "r"]:
@@ -93,6 +100,62 @@ func build() -> void:
 	skull.mesh = sm
 	skull.material_override = mat(skin)
 	_head.add_child(skull)
+	# Eyes: whites and pupils, looking where the head points.
+	for side in [-1.0, 1.0]:
+		var eye := MeshInstance3D.new()
+		var em := SphereMesh.new()
+		em.radius = 0.034
+		em.height = 0.068
+		em.radial_segments = 10
+		em.rings = 5
+		eye.mesh = em
+		eye.position = Vector3(side * 0.052, 0.0, -0.112)
+		eye.material_override = mat(Color(0.97, 0.97, 0.95), 0.4)
+		_head.add_child(eye)
+		var pupil := MeshInstance3D.new()
+		var pm2 := SphereMesh.new()
+		pm2.radius = 0.016
+		pm2.height = 0.032
+		pm2.radial_segments = 8
+		pm2.rings = 4
+		pupil.mesh = pm2
+		pupil.position = Vector3(side * 0.052, 0.0, -0.140)
+		pupil.material_override = mat(Color(0.05, 0.05, 0.07), 0.3)
+		_head.add_child(pupil)
+	var cap_mat := mat(kit.darkened(0.35) if helmet else kit, 0.35 if helmet else 0.8)
+	if hat:
+		cap_mat = mat(Color(0.96, 0.95, 0.90), 0.8)
+		var brim := MeshInstance3D.new()
+		var bm2 := CylinderMesh.new()
+		bm2.top_radius = 0.27
+		bm2.bottom_radius = 0.27
+		bm2.height = 0.022
+		bm2.radial_segments = 20
+		brim.mesh = bm2
+		brim.position.y = 0.07
+		brim.material_override = cap_mat
+		_head.add_child(brim)
+		var crown := MeshInstance3D.new()
+		var cm2 := CylinderMesh.new()
+		cm2.top_radius = 0.12
+		cm2.bottom_radius = 0.145
+		cm2.height = 0.12
+		cm2.radial_segments = 16
+		crown.mesh = cm2
+		crown.position.y = 0.135
+		crown.material_override = cap_mat
+		_head.add_child(crown)
+		var band := MeshInstance3D.new()
+		var dm := CylinderMesh.new()
+		dm.top_radius = 0.148
+		dm.bottom_radius = 0.148
+		dm.height = 0.03
+		dm.radial_segments = 16
+		band.mesh = dm
+		band.position.y = 0.095
+		band.material_override = mat(kit, 0.8)
+		_head.add_child(band)
+		return
 	var cap := MeshInstance3D.new()
 	var cm := SphereMesh.new()
 	cm.radius = 0.15 if helmet else 0.142
@@ -102,7 +165,7 @@ func build() -> void:
 	cm.rings = 6
 	cap.mesh = cm
 	cap.position.y = 0.015
-	cap.material_override = mat(kit.darkened(0.35) if helmet else kit, 0.35 if helmet else 0.8)
+	cap.material_override = cap_mat
 	_head.add_child(cap)
 	var peak := MeshInstance3D.new()
 	var pm := BoxMesh.new()
@@ -120,6 +183,27 @@ func build() -> void:
 			bar.position = Vector3(0, -0.02 - 0.04 * i, -0.15)
 			bar.material_override = mat(Color(0.75, 0.75, 0.78), 0.3)
 			_head.add_child(bar)
+
+## Name and number on the back of the shirt.
+func set_shirt(shirt_name: String, number: int) -> void:
+	if _number_label == null:
+		_number_label = _shirt_label(60)
+		_name_label = _shirt_label(24)
+	_number_label.text = str(number)
+	_name_label.text = shirt_name.to_upper()
+
+func _shirt_label(size: int) -> Label3D:
+	var l := Label3D.new()
+	l.font = Hud.font("bold")
+	l.font_size = size
+	l.pixel_size = 0.003
+	l.modulate = trim
+	l.outline_size = 0
+	l.shaded = false
+	l.double_sided = false
+	l.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	add_child(l)
+	return l
 
 func _capsule(key: String, radius: float, length: float, c: Color) -> void:
 	var mi := MeshInstance3D.new()
@@ -179,7 +263,10 @@ func apply(p: Pose) -> void:
 	_place("torso", p.hips + up * 0.06, neck - up * 0.06)
 	_place("stripe", p.hips + up * 0.30, p.hips + up * 0.36)
 	_place("pelvis", p.hips - pelvis.x * 0.08, p.hips + pelvis.x * 0.08)
-	_head.transform = Transform3D(Basis(Vector3.UP, p.head_yaw), neck + up * 0.17)
+	_head.transform = Transform3D(Basis(Vector3.UP, p.head_yaw).scaled(Vector3.ONE * HEAD_SCALE), neck + up * 0.21)
+	if _number_label != null:
+		_number_label.transform = Transform3D(_torso_basis, p.hips + up * 0.17 + _torso_basis.z * 0.172)
+		_name_label.transform = Transform3D(_torso_basis, p.hips + up * 0.435 + _torso_basis.z * 0.16)
 	var fwd := -_torso_basis.z
 	var arm_pole := Vector3.DOWN * 0.6 - fwd * 0.5
 	_limb("upper_l", "fore_l", "hand_l", shoulder_l, p.hand_l, UPPER_ARM, FOREARM, arm_pole - _torso_basis.x * 0.5)

@@ -51,16 +51,25 @@ var _trail_tick := 0.0
 var _cam_locked := false
 var _cam_parked := false     # stop the chase camera moving (the ball is in a fielder's hands)
 var hit_view_cap := 4.2      # longest we follow a hit before scoring it
+var fx: Fx
+var time_scale_base := 1.0   # normal speed; a replay lowers it
+var _slowmo_until := 0       # real-time msec: brief slow motion as a big hit leaves the bat
+var _swing_where := Vector3.ZERO
+var _swing_angle := 0.0
+var _swing_clock := -1.0     # ball-clock time the bat started moving, for replays
 
-# Test hooks: --autoplay swings by itself, --shots=DIR saves frames.
+# Test hooks: --autoplay swings by itself, --shots=DIR saves frames (--shot-dt, --shots-from, --shots-max).
 var autoplay := false
 var shots_dir := ""
 var shot_dt := 0.2
+var shots_max := 70
+var shots_from := 0
 var _shot_timer := 0.0
 var _shot_index := 0
 var _bot_rng := RandomNumberGenerator.new()
 var _bot_at := -1.0
 var _bot_shot := {}
+var _bot_wild := 0.85        # --bot-n=1.4 makes the autoplay batter mistime it more
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -73,6 +82,12 @@ func _ready() -> void:
 			autoplay = true
 		elif a.begins_with("--shots="):
 			shots_dir = a.trim_prefix("--shots=")
+		elif a.begins_with("--bot-n="):
+			_bot_wild = float(a.trim_prefix("--bot-n="))
+		elif a.begins_with("--shots-from="):
+			shots_from = int(a.trim_prefix("--shots-from="))
+		elif a.begins_with("--shots-max="):
+			shots_max = int(a.trim_prefix("--shots-max="))
 		elif a.begins_with("--shot-dt="):
 			shot_dt = float(a.trim_prefix("--shot-dt="))
 		elif a.begins_with("--cam="):
@@ -127,6 +142,8 @@ func _ready() -> void:
 		add_child(t)
 		_trail.append(t)
 
+	fx = Fx.new()
+	add_child(fx)
 	sfx = Sfx.new()
 	add_child(sfx)
 	hud = Hud.new()
@@ -256,6 +273,9 @@ func _swing(angle: float, power: float, loft: float, contact_time: float) -> voi
 	if pending.outcome == ShotResolver.Outcome.MISS:
 		where = ShotResolver.state_at_time(launch, clampf(contact_time, w.t_in, w.t_out)).pos
 		sfx.play("whoosh")
+	_swing_where = where
+	_swing_angle = angle
+	_swing_clock = contact_time - Tuning.SWING_TIME
 	batter.swing(where, angle)
 
 ## Who is on strike. The nets batter is as good as they come.
@@ -263,6 +283,7 @@ func _batter_skill() -> BatterSkill:
 	return null
 
 func _process(delta: float) -> void:
+	Engine.time_scale = 0.18 if Time.get_ticks_msec() < _slowmo_until else time_scale_base
 	delta = minf(delta, 0.05)
 	frame_usec = Time.get_ticks_usec()
 	match state:
@@ -297,7 +318,7 @@ func _release() -> void:
 	hud.set_delivery("%s  %d km/h" % [delivery.label, int(round(delivery.speed_kmh()))])
 	if autoplay:
 		var w := ShotResolver.hit_window(launch)
-		var n := _bot_rng.randf_range(-0.85, 0.85) * _bot_rng.randf()
+		var n := _bot_rng.randf_range(-_bot_wild, _bot_wild) * _bot_rng.randf()
 		_bot_shot = {"angle": deg_to_rad(_bot_rng.randf_range(-100.0, 100.0)), "power": _bot_rng.randf_range(0.5, 1.0),
 			"loft": 1.0 if _bot_rng.randf() < 0.4 else 0.0, "t": w.t_mid + n * w.half}
 		_bot_at = _bot_shot.t - Tuning.SWING_TIME
@@ -325,6 +346,7 @@ func _advance(delta: float) -> void:
 				sfx.play("bounce", -4.0 - 5.0 * ball.bounces)
 			if state == State.FLIGHT:
 				marker.visible = false
+				fx.dust(ball.pos)
 		if state == State.FLIGHT:
 			if Pitch.hits_stumps(prev, ball.pos, BallPhysics.RADIUS):
 				_bowled()
@@ -373,6 +395,10 @@ func _connect() -> void:
 	else:
 		sfx.play("bat", lerpf(-8.0, 0.0, clampf(speed / 38.0, 0.0, 1.0)), lerpf(0.85, 1.1, pending.quality))
 		_shake = 0.05 * clampf(speed / 40.0, 0.0, 1.0) * pending.quality
+	fx.impact(pending.contact_pos, clampf(speed / 36.0, 0.0, 1.0) * pending.quality)
+	# The big ones hang in the air for a beat.
+	if pending.outcome == ShotResolver.Outcome.HIT and speed > 29.0 and pending.quality > 0.8:
+		_slowmo_until = Time.get_ticks_msec() + 130
 	hud.show_timing(pending.timing_n, pending.timing_label(), pending.timing_ms, pending.perfect_n, pending.clean_n)
 	hud.show_shot(pending.shot_name, "%d km/h off the bat" % int(round(speed * 3.6)))
 	Input.vibrate_handheld(int(lerpf(15.0, 45.0, pending.quality)))
@@ -412,6 +438,7 @@ func _bowled() -> void:
 	timer = 1.9
 	wickets += 1
 	stadium.batter_stumps.shatter(ball.pos.x, ball.vel.length())
+	fx.burst(Vector3(ball.pos.x, 0.45, 0.0))
 	sfx.play("stumps")
 	sfx.play("groan", -2.0)
 	_shake = 0.05
@@ -465,11 +492,15 @@ func _capture(delta: float) -> void:
 	if _shot_timer > 0.0:
 		return
 	_shot_timer = shot_dt
-	var img := get_viewport().get_texture().get_image()
-	img.save_png("%s/f%03d.png" % [shots_dir, _shot_index])
+	if _shot_index >= shots_from:
+		var img := get_viewport().get_texture().get_image()
+		img.save_png("%s/f%03d.png" % [shots_dir, _shot_index])
 	_shot_index += 1
-	if _shot_index > 70:
+	if _shot_index > shots_max:
 		get_tree().quit()
+
+func _exit_tree() -> void:
+	Engine.time_scale = 1.0
 
 ## Android back button: back to the menu (a match is already saved after every ball).
 func _notification(what: int) -> void:
