@@ -132,7 +132,7 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 	# Late sends the ball squarer on the off side; early drags it to leg and up.
 	var out_angle := swing.angle + n * Tuning.MISTIME_ANGLE
 	var elev := lerpf(Tuning.LOFT_MIN, Tuning.LOFT_MAX, clampf(swing.loft, 0.0, 1.0))
-	elev += maxf(0.0, -n) * deg_to_rad(12.0) - maxf(0.0, n) * deg_to_rad(4.0)
+	elev += maxf(0.0, -n) * deg_to_rad(lerpf(7.0, 12.0, lf)) - maxf(0.0, n) * deg_to_rad(4.0)
 	if not horizontal and y > 1.0:
 		elev += deg_to_rad(8.0)
 	elev += (1.0 - q_height) * deg_to_rad(14.0)

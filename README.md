@@ -34,6 +34,10 @@ Swipe to play a shot. Lift your finger just before the ball arrives.
 - Fielding restrictions apply: two outside the ring in overs 1 to 6, five after that.
 - The field is set for each batter. Fielders move to where the striker has been hitting it, so
   the gaps open somewhere else and the same shot stops paying.
+- Read the field. Each over the bowler has a plan (short, wide of off, or full and straight)
+  and the field is set for it, so where the fielders are tells you what is coming.
+- The captain reacts to the game: a slip and catchers in for a new batter, the field spread
+  when you are behind the rate, everyone up to stop the single in a tight last over.
 - Eleven in the field: nine fielders, the keeper and the bowler, shown on the radar bottom-left.
   A fielded ball stays in the fielder's hands and is thrown in to the keeper.
 

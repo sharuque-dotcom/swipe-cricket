@@ -31,6 +31,7 @@ var _hold_pos := Vector3.ZERO
 var umpire: Umpire
 var non_striker: NonStriker
 var _field_over := -1         # the over the field was last set for
+var _mood := "normal"         # the captain's mood the field was last set for
 
 # A boundary or a wicket plays out as: the moment live, the umpire's signal, a full-screen
 # call, then a slow-motion replay from stump height.
@@ -112,7 +113,7 @@ func _build_fielders() -> void:
 ## Spinners get a keeper up at the stumps and a long-on instead of a slip.
 func _set_field() -> void:
 	_spinner_field = match_state.bowler_style() == "off" or match_state.bowler_style() == "leg"
-	field = Fielding.layout(_spinner_field, match_state.over_index() < 6, match_state.striker_shots())
+	field = Captain.field(match_state)
 	for i in fielders.size():
 		var f := fielders[i]
 		# The last spot is the bowler, who is already on the pitch.
@@ -155,7 +156,8 @@ func _next_ball() -> void:
 	_throw_time = 0.0
 	ball_no = match_state.balls + 1
 	machine.state = match_state.machine_state
-	var d := machine.next_for(match_state.bowler_style(), match_state.over_index())
+	var d := machine.next_for(match_state.bowler_style(), match_state.over_index(),
+		Captain.plan(match_state.seed_value, match_state.over_index(), match_state.bowler_style()))
 	match_state.machine_state = machine.state
 	# The captain sets the field every ball, for whoever is on strike and what they have
 	# been doing. Say so when somebody moves.
@@ -172,7 +174,12 @@ func _next_ball() -> void:
 	_start_delivery(d)
 	if new_over:
 		hud.set_delivery("%s to bowl  ·  %s" % [match_state.bowler_name(), _style_name(match_state.bowler_style())])
-	elif not moved.is_empty() and not before.is_empty():
+	var mood := Captain.mood(match_state)
+	if mood != _mood:
+		if not new_over and not before.is_empty():
+			hud.set_delivery(Captain.mood_text(mood))
+		_mood = mood
+	elif not new_over and not moved.is_empty() and not before.is_empty():
 		hud.set_delivery("FIELD CHANGE  ·  %s" % ", ".join(moved.slice(0, 2)))
 	_reset_fielders()
 	umpire.give(Umpire.Sig.NONE)

@@ -136,3 +136,60 @@ func test_field_follows_the_batter() -> void:
 	check(not covered.call(plain), "no deep cover to begin with in the powerplay")
 	check(covered.call(moved), "a man goes back on the cover boundary")
 	check(Fielding.outside_ring(moved) == Fielding.MAX_OUT_POWERPLAY, "and still only two are out")
+
+func test_every_plan_and_mood_keeps_the_field_legal() -> void:
+	for plan in ["", "short", "wide", "straight"]:
+		for mood in ["normal", "attack", "defend", "save_one"]:
+			for spinner in [false, true]:
+				for powerplay in [true, false]:
+					var f := Fielding.layout(spinner, powerplay, [[30.0, 70.0, 4], [-70.0, 68.0, 6]], plan, mood)
+					var cap := Fielding.MAX_OUT_POWERPLAY if powerplay else Fielding.MAX_OUT
+					check(f.size() == 11, "eleven for %s/%s" % [plan, mood])
+					check(Fielding.outside_ring(f) <= cap, "%s/%s: %d outside the ring" % [plan, mood, Fielding.outside_ring(f)])
+					check(f[0].kind == Fielding.Kind.KEEPER and f[f.size() - 1].name == "bowler", "keeper first, bowler last")
+
+func test_plan_moves_the_field() -> void:
+	var leg := func(field: Array) -> int:
+		var n := 0
+		for s in field:
+			if s.kind == Fielding.Kind.DEEP and s.pos.x < 0.0:
+				n += 1
+		return n
+	var short := Fielding.layout(false, false, [], "short")
+	var wide := Fielding.layout(false, false, [], "wide")
+	check(leg.call(short) > leg.call(wide), "short-ball plan: %d deep on the leg side, wide plan: %d" % [leg.call(short), leg.call(wide)])
+
+func test_captain_reads_the_game() -> void:
+	var m := MatchState.create(9)
+	check(Captain.mood(m) == "normal", "start of the chase: %s" % Captain.mood(m))
+	m.record(0, "b Venn")
+	check(Captain.mood(m) == "attack", "new batter in: %s" % Captain.mood(m))
+	var attack := Captain.field(m)
+	check(_spot(attack, "slip") != null and Fielding.outside_ring(attack) < Fielding.MAX_OUT_POWERPLAY + 1, "attacking field has a slip")
+	# Last over, three to get: everyone up.
+	var e := MatchState.create(9)
+	e.balls = 114
+	e.runs = e.target - 3
+	for b in e.batters:
+		b.balls = 10
+	check(Captain.mood(e) == "save_one", "three off the last over: %s" % Captain.mood(e))
+	check(Fielding.outside_ring(Captain.field(e)) == 1, "one man out, the rest saving the single")
+	# Miles behind the rate: spread.
+	var d := MatchState.create(9)
+	d.balls = 60
+	d.runs = d.target - 130
+	for b in d.batters:
+		b.balls = 10
+	check(Captain.mood(d) == "defend", "needing 13 an over: %s" % Captain.mood(d))
+
+func test_bowlers_bowl_to_the_plan() -> void:
+	var machine := BowlingMachine.new(4)
+	var short := 0
+	var wide := 0
+	for i in 200:
+		if machine.next_for("pace", 8, "short").target.z < -9.0:
+			short += 1
+		if machine.next_for("pace", 8, "wide").target.x > 0.45:
+			wide += 1
+	check(short > 120, "short-ball plan: %d of 200 banged in" % short)
+	check(wide > 120, "wide plan: %d of 200 outside off" % wide)

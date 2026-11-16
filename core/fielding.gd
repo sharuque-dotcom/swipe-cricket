@@ -16,11 +16,11 @@ const CATCH_HIGH := 2.55
 const STOP_HIGH := 1.5        # below this a moving ball can be fielded
 const THROW_SPEED := 26.0     # m/s back to the stumps
 const THROW_RELEASE := 0.55   # pick-up and release time
-const STOP_CAP_IN := 12.0     # how far a fielder can get across to stop a ground ball
-const STOP_CAP_DEEP := 18.0
+const STOP_CAP_IN := 30.0     # how far a fielder will chase a ball along the ground
+const STOP_CAP_DEEP := 30.0
 const CATCH_REACTION := 0.50  # a catch needs the fielder to read the ball first
 const CATCH_RUN_SPEED := 4.0
-const CATCH_CAP_IN := 4.5
+const CATCH_CAP_IN := 5.5
 const CATCH_CAP_DEEP := 12.0
 const CATCH_HARD_SPEED := 24.0 # m/s; faster than this, only a dive will do
 const RUN_TIME := 2.8         # seconds per run between the wickets
@@ -86,6 +86,16 @@ const PRIOR_DEEP := [[-128.0, 1.00], [128.0, 0.92], [-80.0, 0.80], [14.0, 0.74],
 	[-42.0, 0.62], [-14.0, 0.58], [88.0, 0.50]]
 const PRIOR_IN := [[16.0, 1.00], [-16.0, 0.98], [46.0, 0.96], [80.0, 0.90], [-46.0, 0.88],
 	[-84.0, 0.74], [122.0, 0.56], [-122.0, 0.52]]
+
+# What a bowling plan adds to those starting points: fielders where that ball gets hit.
+const PLAN_DEEP := {
+	"short": [[-80.0, 0.90], [-45.0, 0.70], [-128.0, 0.50]],
+	"wide": [[88.0, 0.90], [48.0, 0.60], [128.0, 0.50]],
+	"straight": [[-14.0, 0.90], [14.0, 0.60], [-42.0, 0.50]]}
+const PLAN_IN := {
+	"short": [[-84.0, 0.60], [-46.0, 0.40]],
+	"wide": [[80.0, 0.50], [46.0, 0.50], [122.0, 0.50]],
+	"straight": [[16.0, 0.40], [-16.0, 0.40]]}
 
 static func _bump(a: float, b: float, width: float) -> float:
 	var d := absf(wrapf(a - b, -180.0, 180.0))
@@ -157,31 +167,52 @@ static func position_name(angle: float, deep: bool) -> String:
 ## powerplay, never more than five after it. `shots` is the striker's recent scoring shots
 ## as [angle in degrees, metres travelled, runs]; fielders move to where they have been
 ## hitting it, which leaves the gaps somewhere they have not.
+## `plan` is what the bowler means to bowl this over ("short", "wide", "straight" or ""):
+## the field is weighted toward where that ball gets hit. `mood` is the captain's read of
+## the game: "attack" brings a slip in and a man off the rope, "defend" pushes the ring back
+## to cut off twos, "save_one" brings nearly everyone up to stop the single.
 ## Order: keeper first, bowler last.
-static func layout(spinner: bool, powerplay: bool = true, shots: Array = []) -> Array[Spot]:
+static func layout(spinner: bool, powerplay: bool = true, shots: Array = [], plan: String = "", mood: String = "normal") -> Array[Spot]:
 	var f: Array[Spot] = []
-	var close := 0
+	var n_out := MAX_OUT_POWERPLAY if powerplay else MAX_OUT
+	var slip := not spinner and powerplay
+	var in_dist := INFIELD_DIST
+	var in_margin := INFIELD_INSIDE_RING
+	match mood:
+		"attack":
+			slip = true
+			n_out = maxi(n_out - (0 if powerplay else 1), 1)
+			in_dist = 19.0
+		"defend":
+			in_dist = 40.0
+			in_margin = 1.5
+		"save_one":
+			slip = false
+			n_out = 1
+			in_dist = 17.0
 	if spinner:
 		# The keeper stays back to the spinners too, out of the batter's eyeline.
 		f.append(Spot.new("keeper", 0.3, KEEPER_BACK_SPIN, Kind.KEEPER, 1.3))
+		if slip:
+			f.append(Spot.new("slip", 1.7, KEEPER_BACK_SPIN + 0.9, Kind.CLOSE, 1.2))
 	else:
 		f.append(Spot.new("keeper", 0.4, KEEPER_BACK_PACE, Kind.KEEPER, 1.5))
-		if powerplay:
+		if slip:
 			f.append(Spot.new("slip", 2.4, 15.8, Kind.CLOSE, 1.3))
-			close = 1
 	var recent := shots.slice(maxi(0, shots.size() - SHOT_MEMORY))
-	var n_out := MAX_OUT_POWERPLAY if powerplay else MAX_OUT
-	var n_in := 9 - n_out - close
+	var n_in := 9 - n_out - (1 if slip else 0)
 	var bat := Vector3(0.0, 0.0, -1.0)
 	var taken := {}
-	for a: float in _pick(n_out, 0.0, 172.0, PRIOR_DEEP, recent, true, 24.0):
+	var prior_deep: Array = PRIOR_DEEP + PLAN_DEEP.get(plan, [])
+	var prior_in: Array = PRIOR_IN + PLAN_IN.get(plan, [])
+	for a: float in _pick(n_out, 0.0, 172.0, prior_deep, recent, true, 24.0):
 		var d := _dir(a)
 		var p := bat + d * Pitch.ray_to_circle(bat, d, Pitch.BOUNDARY_RADIUS - DEEP_IN_FROM_ROPE)
 		f.append(Spot.new(_unique(position_name(a, true), taken), p.x, p.z, Kind.DEEP, 1.0))
 	# Nobody in the ring stands behind the keeper or in the bowler's way.
-	for a: float in _pick(n_in, 9.0, 140.0, PRIOR_IN, recent, false, 19.0):
+	for a: float in _pick(n_in, 9.0, 140.0, prior_in, recent, false, 19.0):
 		var d := _dir(a)
-		var dist := minf(INFIELD_DIST, Pitch.ray_to_circle(bat, d, Pitch.RING_RADIUS) - INFIELD_INSIDE_RING)
+		var dist := minf(in_dist, Pitch.ray_to_circle(bat, d, Pitch.RING_RADIUS) - in_margin)
 		var p := bat + d * dist
 		f.append(Spot.new(_unique(position_name(a, false), taken), p.x, p.z, Kind.INFIELD, 1.0))
 	# The bowler, in the follow-through, takes return catches.

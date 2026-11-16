@@ -16,7 +16,34 @@ var state: int:
 
 ## A delivery from a bowler of a given style: "pace", "swing", "off" or "leg".
 ## In the last four overs pace bowlers mix in yorkers and bouncers.
-func next_for(style: String, over: int) -> Delivery:
+## `plan` is the captain's plan for the over: most balls are bowled to it.
+func next_for(style: String, over: int, plan: String = "") -> Delivery:
+	var d := _stock(style, over)
+	if plan == "" or _rng.randf() > 0.7:
+		return d
+	var spinner := style == "off" or style == "leg"
+	match plan:
+		"short":
+			if not spinner:
+				d.target = Vector3(_rng.randf_range(0.0, 0.3), 0.0, _rng.randf_range(-12.3, -9.2))
+				d.swing *= 0.3
+				d.label = "Bouncer" if d.target.z < -11.0 else "Short ball"
+		"wide":
+			d.target.x = _rng.randf_range(0.46, 0.72)
+			if not spinner and d.target.z < -7.5:
+				d.target.z = _rng.randf_range(-7.0, -3.5)
+		"straight":
+			d.target.x = _rng.randf_range(-0.08, 0.14)
+			if spinner:
+				d.target.z = _rng.randf_range(-4.2, -2.6)
+			else:
+				d.target.z = _rng.randf_range(-4.6, -1.0)
+				d.swing *= 0.5
+				if d.target.z > -1.7:
+					d.label = "Yorker"
+	return d
+
+func _stock(style: String, over: int) -> Delivery:
 	var d := Delivery.new()
 	match style:
 		"off":

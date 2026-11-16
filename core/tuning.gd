@@ -14,11 +14,11 @@ const PERFECT_N := 0.28
 const CLEAN_N := 0.80
 # Swinging harder, and going aerial, both shrink the sweet part of the window.
 const POWER_CONTROL_COST := 0.30
-const LOFT_CONTROL_COST := 0.20
+const LOFT_CONTROL_COST := 0.28
 # How quickly a shot loses pace as timing leaves the sweet zone (smaller = harsher).
 const MISTIME_FALLOFF := 0.65
 # A mistimed lofted shot goes up rather than out.
-const MISTIME_SKY := deg_to_rad(12.0)
+const MISTIME_SKY := deg_to_rad(18.0)
 
 # Batter ability: what the weakest tail-ender keeps of the best batter's numbers.
 const SKILL_POWER_FLOOR := 0.74
