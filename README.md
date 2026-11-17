@@ -35,6 +35,8 @@ Swipe to play a shot. Lift your finger just before the ball arrives.
 - The field is set for each batter. Fielders move to where the striker has been hitting it, so
   the gaps open somewhere else and the same shot stops paying.
 - The game waits for you to tap before every ball, so you can check the field on the radar.
+  Turn on AUTO BOWL (bottom right) to have the next ball come on its own after a moment; it
+  waits longer when a new bowler's card is up, and a tap still bowls straight away.
   When a new bowler comes on, a card shows who it is (pacer or spinner, their style, pace and
   what the ball does), the whole field by name, and where this batter has been hitting it.
 - Shots look different: drives, lofted drives, stepping out to spin, the helicopter shot off

@@ -67,6 +67,10 @@ var _wipe: Wipe
 var _replay: PanelContainer
 var _field_card: FieldCard
 var _tap: PanelContainer
+var _tap_label: Label
+## The auto-bowl switch, bottom right in a match. Emits `auto_bowl_toggled`.
+var auto_toggle: Button
+signal auto_bowl_toggled(on: bool)
 var _banner: PanelContainer
 var _banner_bar: ColorRect
 var _banner_title: Label
@@ -273,8 +277,28 @@ func _ready() -> void:
 	_tap.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_tap.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_tap.visible = false
-	_tap.add_child(_text("TAP TO BOWL", "bold", 36, NAVY))
+	_tap_label = _text("TAP TO BOWL", "bold", 36, NAVY)
+	_tap.add_child(_tap_label)
 	_root.add_child(_tap)
+	auto_toggle = Button.new()
+	auto_toggle.toggle_mode = true
+	auto_toggle.focus_mode = Control.FOCUS_NONE
+	auto_toggle.add_theme_font_override("font", font("bold"))
+	auto_toggle.add_theme_font_size_override("font_size", 24)
+	auto_toggle.anchor_left = 1.0
+	auto_toggle.anchor_right = 1.0
+	auto_toggle.anchor_top = 1.0
+	auto_toggle.anchor_bottom = 1.0
+	auto_toggle.offset_left = -(MARGIN + 210)
+	auto_toggle.offset_right = -MARGIN
+	auto_toggle.offset_top = -(MARGIN + 40 + 58)
+	auto_toggle.offset_bottom = -(MARGIN + 40)
+	auto_toggle.visible = false
+	auto_toggle.toggled.connect(func(on: bool):
+		_style_auto(on)
+		auto_bowl_toggled.emit(on))
+	_root.add_child(auto_toggle)
+	_style_auto(false)
 	# Lower third for cutscenes: who is walking out, milestones, results.
 	_banner = PanelContainer.new()
 	var bsb := card_box(18, 0.92)
@@ -482,8 +506,26 @@ func hide_field_card() -> void:
 	_field_card.visible = false
 	_radar.visible = true
 
-func show_tap_prompt(on: bool) -> void:
+func show_tap_prompt(on: bool, auto: bool = false) -> void:
 	_tap.visible = on
+	_tap_label.text = "AUTO BOWL  ·  TAP TO GO NOW" if auto else "TAP TO BOWL"
+	_tap_label.add_theme_font_size_override("font_size", 26 if auto else 36)
+
+## Show the auto-bowl switch, set to `on`, without emitting.
+func show_auto_toggle(on: bool) -> void:
+	auto_toggle.set_pressed_no_signal(on)
+	_style_auto(on)
+	auto_toggle.visible = true
+
+func _style_auto(on: bool) -> void:
+	auto_toggle.text = "AUTO BOWL  %s" % ("ON" if on else "OFF")
+	for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+		var sb := pill_box(Color(GREEN.r * 0.55, GREEN.g * 0.55, GREEN.b * 0.55, 0.92) if on else Color(NAVY.r, NAVY.g, NAVY.b, 0.85), 18)
+		sb.border_color = GREEN if on else Color(1, 1, 1, 0.2)
+		sb.set_border_width_all(2)
+		auto_toggle.add_theme_stylebox_override(st, sb)
+	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
+		auto_toggle.add_theme_color_override(c, TEXT if on else DIM)
 
 func show_banner(title: String, sub: String, c: Color) -> void:
 	_banner_title.text = title
@@ -740,7 +782,8 @@ class FieldCard:
 		var py := fy + 50.0
 		var a := 0.75 + 0.25 * sin(age * 4.5)
 		draw_style_box(Hud.pill_box(Color(Hud.GOLD.r, Hud.GOLD.g, Hud.GOLD.b, a), 22), Rect2(x, py, inner, 62))
-		_t("bold", "TAP TO BOWL", x, py + 44, 34, Hud.NAVY, HORIZONTAL_ALIGNMENT_CENTER, inner)
+		_t("bold", "AUTO BOWL  ·  TAP TO GO NOW" if info.get("auto", false) else "TAP TO BOWL", x, py + 44,
+			28 if info.get("auto", false) else 34, Hud.NAVY, HORIZONTAL_ALIGNMENT_CENTER, inner)
 
 	func _map(p: Vector3, c: Vector2, k: float) -> Vector2:
 		return c + Vector2(p.x - Pitch.FIELD_CENTRE.x, p.z - Pitch.FIELD_CENTRE.z) * k

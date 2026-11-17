@@ -8,6 +8,8 @@ signal swipe_moved(points: PackedVector2Array)
 signal swiped(angle: float, power: float, loft: float)
 
 var enabled := true
+## On-screen buttons: a touch that starts on one of these is not a swipe.
+var blockers: Array[Control] = []
 var _active := false
 var _index := -1
 var _points := PackedVector2Array()
@@ -17,7 +19,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if not enabled:
 		return
 	if event is InputEventScreenTouch:
-		if event.pressed and not _active:
+		if event.pressed and not _active and not _blocked(event.position):
 			_active = true
 			_index = event.index
 			_points = PackedVector2Array([event.position])
@@ -29,6 +31,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag and _active and event.index == _index:
 		_points.append(event.position)
 		swipe_moved.emit(_points)
+
+func _blocked(at: Vector2) -> bool:
+	for c in blockers:
+		if c.is_visible_in_tree() and c.get_global_rect().has_point(at):
+			return true
+	return false
 
 func _finish() -> void:
 	_active = false

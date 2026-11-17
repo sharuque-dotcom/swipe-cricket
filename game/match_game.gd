@@ -33,6 +33,9 @@ var non_striker: NonStriker
 var _field_over := -1         # the over the field was last set for
 var _mood := "normal"         # the captain's mood the field was last set for
 var _ready_t := 0.0           # how long the field card has been up before this ball
+var auto_bowl := false        # bowl without waiting for a tap
+const AUTO_WAIT := 1.2        # seconds to look at the field before an auto ball
+const AUTO_WAIT_CARD := 3.0   # longer when a new bowler's card is up
 
 # Cutscenes between balls: openers walking out, the wicket huddle and the walk-off and
 # walk-in, milestones, and the finish. Queued, played after any replay, tap skips.
@@ -129,6 +132,15 @@ func _build_fielders() -> void:
 	add_child(walker_in)
 	walker_in.build(BLUE_KIT, Color(1.0, 0.80, 0.15))
 	walker_in.visible = false
+	auto_bowl = Settings.get_bool("auto_bowl", false)
+	hud.show_auto_toggle(auto_bowl)
+	hud.auto_bowl_toggled.connect(func(on: bool):
+		auto_bowl = on
+		Settings.set_bool("auto_bowl", on)
+		if state == State.READY:
+			hud.show_tap_prompt(not hud._field_card.visible, on)
+			_ready_t = 0.0)
+	swipe.blockers.append(hud.auto_toggle)
 
 ## Spinners get a keeper up at the stumps and a long-on instead of a slip.
 func _set_field() -> void:
@@ -215,7 +227,7 @@ func _next_ball() -> void:
 		hud.show_field_card(field, _card_info(new_over, mood, mood_changed), moved)
 	else:
 		# Otherwise the radar is enough; say if the captain has changed something.
-		hud.show_tap_prompt(true)
+		hud.show_tap_prompt(true, auto_bowl)
 		if mood_changed:
 			hud.set_delivery(Captain.mood_text(mood))
 		elif not moved.is_empty():
@@ -239,6 +251,7 @@ func _card_info(new_over: bool, mood: String, mood_changed: bool) -> Dictionary:
 	info["ring"] = "%d OUTSIDE THE RING%s" % [Fielding.outside_ring(field), "  ·  POWERPLAY" if m.over_index() < 6 else ""]
 	info["shots"] = m.striker_shots()
 	info["striker"] = m.striker_name()
+	info["auto"] = auto_bowl
 	return info
 
 func _style_info(style: String) -> Dictionary:
@@ -762,7 +775,8 @@ func _process(delta: float) -> void:
 		_run_scene(minf(delta, 0.05))
 	if state == State.READY:
 		_ready_t += delta
-		if autoplay and _ready_t > 0.7:
+		var wait := AUTO_WAIT_CARD if hud._field_card.visible else AUTO_WAIT
+		if (autoplay and _ready_t > 0.7) or (auto_bowl and _ready_t > wait):
 			_bowl()
 	if state == State.DEAD:
 		_dead_for += delta
