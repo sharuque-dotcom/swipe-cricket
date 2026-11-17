@@ -34,9 +34,16 @@ Swipe to play a shot. Lift your finger just before the ball arrives.
 - Fielding restrictions apply: two outside the ring in overs 1 to 6, five after that.
 - The field is set for each batter. Fielders move to where the striker has been hitting it, so
   the gaps open somewhere else and the same shot stops paying.
-- Before every ball the game waits for you: a card shows who is bowling (pacer or spinner, their
-  style, pace and what the ball does), the whole field by name, where this batter has been
-  hitting it, and any fielder who has just moved. Tap to bowl.
+- The game waits for you to tap before every ball, so you can check the field on the radar.
+  When a new bowler comes on, a card shows who it is (pacer or spinner, their style, pace and
+  what the ball does), the whole field by name, and where this batter has been hitting it.
+- Shots look different: drives, lofted drives, stepping out to spin, the helicopter shot off
+  a yorker, cuts and upper cuts, pulls (the one-legged pull when you go aerial), hooks, sweeps,
+  slog sweeps, reverse sweeps against spin, scoops and ramps. Each batter stands a little
+  differently too.
+- Between balls: the openers walk out, the fielders mob the bowler after a wicket while the
+  batter walks off and the next one walks in, fifties and hundreds get the bat raised, and the
+  winning runs get a celebration. Tap to skip any of it.
 - Read the field. Each over the bowler has a plan (short, wide of off, or full and straight)
   and the field is set for it, so where the fielders are tells you what is coming.
 - The captain reacts to the game: a slip and catchers in for a new batter, the field spread
@@ -48,6 +55,7 @@ Swipe to play a shot. Lift your finger just before the ball arrives.
   across, and a slow-motion replay runs from stump height. Tap to skip any of it.
 - Fielders dive for catches and stops at full stretch and slide to save the ball at the rope.
 
+`tests/pose_viewer.gd` renders every batting animation to images for checking.
 `godot --headless -s tests/balance_sim.gd` plays whole innings with simulated players and prints
 what each style of batting scores; use it when changing `core/tuning.gd` or `core/fielding.gd`.
 
