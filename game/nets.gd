@@ -56,6 +56,7 @@ var time_scale_base := 1.0   # normal speed; a replay lowers it
 var _slowmo_until := 0       # real-time msec: brief slow motion as a big hit leaves the bat
 var _swing_where := Vector3.ZERO
 var _swing_angle := 0.0
+var _swing_style := ""
 var _swing_clock := -1.0     # ball-clock time the bat started moving, for replays
 
 # Test hooks: --autoplay swings by itself, --shots=DIR saves frames (--shot-dt, --shots-from, --shots-max).
@@ -276,7 +277,12 @@ func _swing(angle: float, power: float, loft: float, contact_time: float) -> voi
 	_swing_where = where
 	_swing_angle = angle
 	_swing_clock = contact_time - Tuning.SWING_TIME
-	batter.swing(where, angle)
+	# Misses still play the shot that was meant.
+	_swing_style = pending.style if pending.style != "" \
+		else str(ShotResolver.shot(rad_to_deg(angle), where.y, loft, delivery.speed < 27.0)[1])
+	batter.swing(where, angle, _swing_style)
+	if autoplay:
+		print("shot %s at frame %d" % [_swing_style, _shot_index])
 
 ## Who is on strike. The nets batter is as good as they come.
 func _batter_skill() -> BatterSkill:

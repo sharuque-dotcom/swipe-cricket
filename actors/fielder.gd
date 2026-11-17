@@ -3,7 +3,7 @@ extends Node3D
 ## A fielder: crouches ready as the bowler runs in, runs to where the ball will be, and
 ## takes it in their hands: a catch at whatever height it arrives, or a stop on the grass.
 
-enum Mode { STAND, READY, RUN, CATCH, STOP, THROW, DIVE, SLIDE }
+enum Mode { STAND, READY, RUN, CATCH, STOP, THROW, DIVE, SLIDE, CELEBRATE }
 
 const CATCH_REACH := 0.30    # how far in front of the body the hands take a catch
 const STOP_REACH := 0.50
@@ -112,6 +112,22 @@ func chase(toward: Vector3, seconds: float, speed: float = 6.2) -> void:
 	_t = 0.0
 	mode = Mode.RUN
 
+## A wicket: run to `at` (or stay put if it is where they are) and celebrate there,
+## facing `centre`.
+func celebrate(at: Vector3, seconds: float, centre: Vector3) -> void:
+	_tilt(0.0, 0.0)
+	_t = 0.0
+	_face_to = centre
+	if Vector3(at.x, 0, at.z).distance_to(Vector3(position.x, 0, position.z)) < 0.5:
+		mode = Mode.CELEBRATE
+		_face(centre)
+		return
+	_target = Vector3(at.x, 0.0, at.z)
+	_end_mode = Mode.CELEBRATE
+	_settle = 0.05
+	_arrive = maxf(seconds, 0.3)
+	mode = Mode.RUN
+
 ## Arm comes through to throw the ball in.
 func throw_to(p: Vector3) -> void:
 	_tilt(0.0, 0.0)
@@ -137,7 +153,7 @@ func _face(p: Vector3) -> void:
 
 func _process(delta: float) -> void:
 	delta = minf(delta, 0.05)   # same cap as the ball's clock, so a slow frame keeps them in step
-	if mode == Mode.THROW:
+	if mode == Mode.THROW or mode == Mode.CELEBRATE:
 		_t += delta
 		_pose(_t)
 		return
@@ -222,6 +238,16 @@ func _pose(time: float) -> void:
 			p.hand_l = Vector3(0.20, 0.72, -0.42)
 			p.hand_r = Vector3(0.34, 0.70, -0.42)
 			_tilt(1.05 * d, 0.10 * d)
+		Mode.CELEBRATE:
+			# Arms up, jumping, a bit out of step with each other.
+			var ph := time * 7.0 + float(get_instance_id() % 7)
+			var jump := 0.16 * absf(sin(ph))
+			p.hips = Vector3(0, 0.93 + jump, 0)
+			p.foot_l = Vector3(-0.14, jump, 0)
+			p.foot_r = Vector3(0.14, jump, 0)
+			p.hand_l = Vector3(-0.30, 1.95 + jump, -0.10)
+			p.hand_r = Vector3(0.30, 1.95 + jump, -0.10)
+			p.lean = -0.05
 		Mode.THROW:
 			var u := clampf(time / 0.25, 0.0, 1.0)
 			p.lean = lerpf(-0.1, 0.35, u)

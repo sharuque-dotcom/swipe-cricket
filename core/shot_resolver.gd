@@ -23,6 +23,7 @@ class Result:
 	var contact_pos := Vector3.ZERO
 	var exit: BallPhysics.State = null
 	var shot_name := ""
+	var style := ""            # which batting animation plays: see Batter.swing
 	var reason := ""
 	# The timing zones this swing was judged against: they depend on the batter and the shot.
 	var perfect_n := Tuning.PERFECT_N
@@ -85,7 +86,9 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 	var deg := rad_to_deg(swing.angle)
 	var behind := absf(deg) > 130.0
 	var horizontal := absf(deg) > 50.0 and not behind
-	r.shot_name = _name(deg, at.pos.y, swing.loft)
+	var named := shot(deg, at.pos.y, swing.loft, speed_in < SPIN_SPEED)
+	r.shot_name = named[0]
+	r.style = named[1]
 
 	if absf(n) > r.clean_n:
 		r.outcome = Outcome.EDGE
@@ -95,12 +98,14 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 			# Late: outside edge behind the wicket. The later the bat, the finer it goes:
 			# a thin one carries to the keeper, thicker ones to slip or down to third man.
 			r.shot_name = "Outside edge"
+			r.style = "edge"
 			var fine := clampf((n - r.clean_n) / maxf(1.0 - r.clean_n, 0.01), 0.0, 1.0)
 			var up := deg_to_rad(9.0 + clampf((30.0 - speed_in) * 0.35, 0.0, 5.0))
 			r.exit = _exit(at, deg_to_rad(lerpf(140.0, 177.0, fine)), up, edge_speed)
 		else:
 			# Early: leading edge, looping up in front.
 			r.shot_name = "Leading edge"
+			r.style = "edge"
 			r.exit = _exit(at, deg_to_rad(25.0), deg_to_rad(52.0), 9.0)
 		return r
 
@@ -151,25 +156,48 @@ static func _exit(at: BallPhysics.State, angle: float, elev: float, speed: float
 	s.vel = (flat * cos(elev) + Vector3.UP * sin(elev)) * speed
 	return s
 
-static func _name(deg: float, y: float, loft: float) -> String:
+## Balls slower than this at the bat are spin: the batter can sweep, reverse it, or dance down.
+const SPIN_SPEED := 26.0
+
+## The shot's name and the animation that goes with it, from where the swing was aimed
+## (degrees, + is the off side), the height of the ball at the bat, the loft, and whether
+## it was spin. Returns [name, style].
+static func shot(deg: float, y: float, loft: float, spin: bool) -> Array:
 	var a := absf(deg)
 	var off := deg >= 0.0
+	var lofted := loft > 0.5
+	if a > 130.0:
+		if lofted:
+			return ["Ramp" if off else "Scoop", "scoop"]
+		return ["Dab" if off else "Leg glance", "glance"]
+	if a > 50.0:
+		if off:
+			if spin and y < 0.6 and a >= 70.0:
+				return ["Reverse sweep", "reverse_sweep"]
+			if lofted and y > 1.15:
+				return ["Upper cut", "upper_cut"]
+			var cut := "Square cut" if a <= 100.0 else "Late cut"
+			return ["Lofted " + cut.to_lower() if lofted else cut, "cut"]
+		if y > 1.3:
+			return ["Hook" if not lofted else "Lofted hook", "hook"]
+		if y > 0.7:
+			return ["One-legged pull" if lofted else "Pull", "one_leg_pull" if lofted else "pull"]
+		if spin and y < 0.6:
+			return ["Slog sweep" if lofted else "Sweep", "slog_sweep" if lofted else "sweep"]
+		if a > 95.0 and y < 0.6:
+			return ["Sweep", "sweep"]
+		return ["Lofted flick" if lofted else "Flick", "flick"]
 	var base := ""
 	if a <= 15.0:
 		base = "Straight drive"
-	elif a <= 50.0:
-		base = "Off drive" if off and a <= 30.0 else ("Cover drive" if off else "On drive")
-	elif a <= 130.0:
-		if off:
-			base = "Square cut" if a <= 100.0 else "Late cut"
-		elif y > 1.3:
-			base = "Hook"
-		elif y > 0.7:
-			base = "Pull"
-		else:
-			base = "Flick" if a <= 95.0 else "Sweep"
+	elif off:
+		base = "Off drive" if a <= 30.0 else "Cover drive"
 	else:
-		base = "Dab" if off else "Leg glance"
-	if loft > 0.5 and a <= 130.0:
-		return "Lofted " + base.to_lower()
-	return base
+		base = "On drive"
+	if lofted and y < 0.36 and deg <= 20.0:
+		return ["Helicopter shot", "helicopter"]
+	if lofted and spin:
+		return ["Down the track, lofted " + base.to_lower(), "step_out"]
+	if lofted:
+		return ["Lofted " + base.to_lower(), "loft_drive"]
+	return [base, "drive"]

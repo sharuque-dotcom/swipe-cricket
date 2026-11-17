@@ -34,6 +34,13 @@ var _field_over := -1         # the over the field was last set for
 var _mood := "normal"         # the captain's mood the field was last set for
 var _ready_t := 0.0           # how long the field card has been up before this ball
 
+# Cutscenes between balls: openers walking out, the wicket huddle and the walk-off and
+# walk-in, milestones, and the finish. Queued, played after any replay, tap skips.
+var _scenes: Array = []
+var _scene := {}
+var walker_out: Walker
+var walker_in: Walker
+
 # A boundary or a wicket plays out as: the moment live, the umpire's signal, a full-screen
 # call, then a slow-motion replay from stump height.
 const SIGNAL_TIME := 0.95
@@ -70,6 +77,10 @@ func _new_session() -> void:
 	phase = Phase.INTRO
 	hit_view_cap = 6.0
 	_field_over = -1
+	_scenes.clear()
+	_scene = {}
+	if not resumed:
+		_scenes.append({"kind": "openers"})
 	_replay_pending = false
 	_replaying = false
 	_event_t = -1.0
@@ -110,6 +121,14 @@ func _build_fielders() -> void:
 	non_striker.rotation.y = PI
 	add_child(non_striker)
 	non_striker.build(BLUE_KIT, Color(1.0, 0.80, 0.15))
+	walker_out = Walker.new()
+	add_child(walker_out)
+	walker_out.build(BLUE_KIT, Color(1.0, 0.80, 0.15))
+	walker_out.visible = false
+	walker_in = Walker.new()
+	add_child(walker_in)
+	walker_in.build(BLUE_KIT, Color(1.0, 0.80, 0.15))
+	walker_in.visible = false
 
 ## Spinners get a keeper up at the stumps and a long-on instead of a slip.
 func _set_field() -> void:
@@ -143,6 +162,9 @@ func _next_ball() -> void:
 	_cut = false
 	if _replay_pending:
 		_start_replay()
+		return
+	if not _scenes.is_empty():
+		_start_scene(_scenes.pop_front())
 		return
 	if match_state.finished():
 		_show_result()
@@ -188,7 +210,16 @@ func _next_ball() -> void:
 	bowler.pose_at(bowler.t)
 	_ready_t = 0.0
 	hud.set_delivery("")
-	hud.show_field_card(field, _card_info(new_over, mood, mood_changed), moved)
+	if new_over:
+		# A new bowler: the full card, with the field.
+		hud.show_field_card(field, _card_info(new_over, mood, mood_changed), moved)
+	else:
+		# Otherwise the radar is enough; say if the captain has changed something.
+		hud.show_tap_prompt(true)
+		if mood_changed:
+			hud.set_delivery(Captain.mood_text(mood))
+		elif not moved.is_empty():
+			hud.set_delivery("FIELD CHANGE  ·  %s" % ", ".join(moved.slice(0, 2)))
 
 ## Everything the pre-ball card says about the bowler and the field.
 func _card_info(new_over: bool, mood: String, mood_changed: bool) -> Dictionary:
@@ -227,6 +258,7 @@ func _style_info(style: String) -> Dictionary:
 ## The player has seen the field: the bowler sets off.
 func _bowl() -> void:
 	hud.hide_field_card()
+	hud.show_tap_prompt(false)
 	state = State.RUNUP
 	bowler.start(delivery.speed < 27.0)
 
@@ -243,6 +275,7 @@ func _reset_fielders() -> void:
 func _refresh_hud() -> void:
 	hud.set_match(match_state)
 	_shirt(batter.figure, match_state.striker_name())
+	batter.vary(match_state.striker)
 	_shirt(non_striker.figure, str(match_state.batters[match_state.non_striker].name))
 
 ## Queue the umpire's signal, the full-screen call and the replay for a big moment.
@@ -310,6 +343,9 @@ func _end_replay() -> void:
 
 func _update_camera(delta: float) -> void:
 	if _cam_locked:
+		return
+	if not _scene.is_empty():
+		_scene_camera()
 		return
 	if _replaying:
 		# Stump height, just outside off, looking up at the batter; then follow the ball.
@@ -482,14 +518,16 @@ func _surname(n: String) -> String:
 func _record(scored: int, how_out: String) -> void:
 	_dead_for = 0.0
 	var before_over := match_state.over_index()
+	var hitter := match_state.striker
+	var had: int = match_state.batters[hitter].runs
+	var out_line := match_state.batter_line(hitter)
 	var ev := match_state.record(scored, how_out)
+	_queue_scenes(ev, hitter, had, how_out, out_line)
 	if autoplay:
 		print("%s  %d/%d  %s" % [match_state.overs_text(), match_state.runs, match_state.wickets, how_out if how_out != "" else str(scored)])
 	runs = match_state.runs
 	wickets = match_state.wickets
 	_save()
-	if ev.wicket and ev.new_batter != "":
-		hud.set_delivery("NEW BATTER  ·  %s  ·  %s" % [ev.new_batter, match_state.striker_skill().role])
 	if ev.finished:
 		_refresh_hud()
 		timer = maxf(timer, 2.2)
@@ -500,6 +538,167 @@ func _record(scored: int, how_out: String) -> void:
 		timer = maxf(timer, 1.2) + 0.8
 		hud.set_delivery("End of over %d" % m.over_index())
 	_refresh_hud()
+
+func _queue_scenes(ev: Dictionary, hitter: int, had: int, how_out: String, out_line: String) -> void:
+	var m := match_state
+	var b: Dictionary = m.batters[hitter]
+	for mark in [50, 100]:
+		if had < mark and int(b.runs) >= mark:
+			_scenes.append({"kind": "milestone", "who": hitter, "mark": mark})
+	if ev.finished:
+		_scenes.append({"kind": "win" if m.won() else "red_win"})
+	elif ev.wicket:
+		_scenes.append({"kind": "wicket", "out": hitter, "how": how_out, "line": out_line, "in": m.striker})
+
+func _scene_length(kind: String) -> float:
+	return {"openers": 3.6, "wicket": 4.8, "milestone": 3.0, "win": 3.2, "red_win": 3.0}.get(kind, 3.0)
+
+func _start_scene(sc: Dictionary) -> void:
+	if autoplay:
+		print("scene %s at frame %d" % [sc.kind, _shot_index])
+	_scene = sc
+	_scene.t = 0.0
+	_scene.dur = _scene_length(sc.kind)
+	phase = Phase.PLAY
+	state = State.DEAD
+	timer = 999.0
+	hud.hide_card()
+	hud.clear_result()
+	hud.set_delivery("")
+	hud.show_tap_prompt(false)
+	ball_node.visible = false
+	blob.visible = false
+	marker.visible = false
+	_trail_pos.clear()
+	_reset_fielders()
+	stadium.batter_stumps.reset()
+	var m := match_state
+	match str(sc.kind):
+		"openers":
+			batter.visible = false
+			non_striker.visible = false
+			_shirt(walker_out.figure, str(m.batters[0].name))
+			_shirt(walker_in.figure, str(m.batters[1].name))
+			walker_out.walk(Vector3(-10.5, 0, 5.0), Vector3(-1.2, 0, -0.6), 3.4)
+			walker_in.walk(Vector3(-11.2, 0, 4.0), Vector3(-1.9, 0, -1.6), 3.4)
+			walker_out.glum = false
+			hud.show_banner("BLUE OPENERS", "%s  &  %s  ·  chasing %d" % [m.batters[0].name, m.batters[1].name, m.target], Hud.BLUE)
+		"wicket":
+			batter.visible = false
+			_shirt(walker_out.figure, str(m.batters[sc.out].name))
+			_shirt(walker_in.figure, str(m.batters[sc.in].name))
+			walker_out.visible = false
+			walker_in.visible = false
+			_huddle()
+			sfx.play("cheer", -8.0)
+			hud.show_banner("OUT", "%s  ·  %s" % [sc.line, sc.how], Hud.RED)
+		"milestone":
+			var b: Dictionary = m.batters[sc.who]
+			_shirt(batter.figure, str(b.name))
+			batter.celebrate("milestone")
+			stadium.crowd_material.set_shader_parameter("excite", 1.0)
+			sfx.play("cheer", -3.0)
+			hud.show_banner("FIFTY" if sc.mark == 50 else "HUNDRED", "%s  %d (%d)  ·  %d fours  ·  %d sixes" % [
+				b.name, b.runs, b.balls, b.fours, b.sixes], Hud.GOLD)
+		"win":
+			batter.celebrate("win")
+			stadium.crowd_material.set_shader_parameter("excite", 1.0)
+			sfx.play("cheer")
+			hud.show_banner("BLUE WIN", m.result_text().substr(m.result_text().find(" by ") + 1).capitalize(), Hud.BLUE)
+		"red_win":
+			_huddle()
+			sfx.play("groan")
+			var tied := m.runs == m.target - 1
+			hud.show_banner("TIED" if tied else "RED WIN", "" if tied else m.result_text().substr(m.result_text().find(" by ") + 1), Hud.RED)
+
+## Fielders within reach run in to the bowler and jump; the rest celebrate where they are.
+func _huddle() -> void:
+	var centre := bowler.to_global(Bowler.FINISH)
+	centre.y = 0.0
+	bowler.celebrate()
+	var near := []
+	for i in fielders.size():
+		if not fielders[i].visible:
+			continue
+		var d := Vector2(field[i].pos.x - centre.x, field[i].pos.z - centre.z).length()
+		if d < 26.0:
+			near.append(i)
+		else:
+			fielders[i].celebrate(field[i].pos, 0.0, centre)
+	for k in near.size():
+		var i: int = near[k]
+		var a := TAU * float(k) / maxf(near.size(), 1) + 0.4
+		var at := centre + Vector3(cos(a), 0, sin(a)) * 1.9
+		var d := Vector2(field[i].pos.x - at.x, field[i].pos.z - at.z).length()
+		fielders[i].celebrate(at, d / 7.0, centre)
+
+func _run_scene(delta: float) -> void:
+	_scene.t += delta
+	var t: float = _scene.t
+	if str(_scene.kind) == "wicket" and t >= 2.0 and not _scene.get("walking", false):
+		# Second shot: the walk off and the new batter coming in.
+		_scene.walking = true
+		walker_out.walk(Vector3(-0.4, 0, -0.9), Vector3(-9.5, 0, 3.6), 2.8, 0.0, true)
+		walker_in.walk(Vector3(-10.5, 0, 1.8), Vector3(-1.2, 0, -0.8), 2.8, 0.0)
+		var m := match_state
+		var sk := MatchState.skill_of(_scene.in)
+		hud.show_banner("IN: %s" % m.batters[_scene.in].name, "%s  ·  POWER %d/5  ·  TIMING %d/5" % [
+			sk.role.to_upper(), BatterSkill.pips(sk.power), BatterSkill.pips(sk.timing)], Hud.BLUE)
+	if t >= float(_scene.dur):
+		_end_scene()
+
+func _end_scene() -> void:
+	if _scene.is_empty():
+		return
+	_scene = {}
+	walker_out.visible = false
+	walker_in.visible = false
+	batter.visible = true
+	non_striker.visible = true
+	bowler.celebrating = false
+	bowler.pose_at(-bowler.run_time())
+	batter.reset()
+	_refresh_hud()
+	_reset_fielders()
+	hud.hide_banner()
+	stadium.crowd_material.set_shader_parameter("excite", 0.0)
+	state = State.DEAD
+	timer = 0.02
+	_dead_for = 0.0
+
+func _scene_camera() -> void:
+	var t: float = _scene.t
+	var from := Vector3.ZERO
+	var look := Vector3.ZERO
+	var fov := 40.0
+	match str(_scene.kind):
+		"openers":
+			var mid := (walker_out.position + walker_in.position) * 0.5
+			from = mid + Vector3(3.2, 2.0, -7.2)
+			look = mid + Vector3(0, 1.0, 0)
+		"wicket":
+			if t < 2.0:
+				var c := bowler.to_global(Bowler.FINISH)
+				from = c + Vector3(-6.5, 2.6, 5.5)
+				look = c + Vector3(0, 1.0, 0)
+			else:
+				# In front of the new batter as they walk in; the one who is out passes by.
+				var p := walker_in.position
+				var dir := (Vector3(-1.2, 0, -0.8) - Vector3(-10.5, 0, 1.8)).normalized()
+				from = p + dir * 5.0 + Vector3(0, 1.7, 0) + Vector3(-dir.z, 0, dir.x) * 1.4
+				look = p + Vector3(0, 1.05, 0)
+		"red_win":
+			var c := bowler.to_global(Bowler.FINISH)
+			from = c + Vector3(-6.5, 2.6, 5.5)
+			look = c + Vector3(0, 1.0, 0)
+		_:
+			# Front-on to the batter, from the off side.
+			from = Vector3(2.4, 1.6, -3.3)
+			look = Vector3(-0.36, 1.35, -0.93)
+			fov = 42.0
+	cam.fov = fov
+	cam.position = from
+	cam.look_at(look)
 
 func _style_name(s: String) -> String:
 	return {"swing": "swing", "pace": "pace", "off": "off spin", "leg": "leg spin"}.get(s, s)
@@ -538,6 +737,10 @@ func _on_swipe_started() -> void:
 				match_state = null
 				_new_session()
 			return
+	if not _scene.is_empty():
+		if _scene.t > 0.4:
+			_end_scene()
+		return
 	if state == State.READY and phase != Phase.RESULT:
 		if _ready_t > 0.3:
 			_bowl()
@@ -555,6 +758,8 @@ func _on_swipe_started() -> void:
 
 func _process(delta: float) -> void:
 	super._process(delta)
+	if not _scene.is_empty():
+		_run_scene(minf(delta, 0.05))
 	if state == State.READY:
 		_ready_t += delta
 		if autoplay and _ready_t > 0.7:
@@ -581,7 +786,7 @@ func _process(delta: float) -> void:
 	if _replaying:
 		if not _replay_swung and clock >= _swing_clock:
 			_replay_swung = true
-			batter.swing(_swing_where, _swing_angle)
+			batter.swing(_swing_where, _swing_angle, _swing_style)
 		time_scale_base = 0.3 if clock < _replay_ref + 0.22 else 0.7
 		if clock >= _replay_end:
 			_end_replay()

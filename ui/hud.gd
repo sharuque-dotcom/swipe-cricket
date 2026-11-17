@@ -66,6 +66,11 @@ var _safe_top := 0.0
 var _wipe: Wipe
 var _replay: PanelContainer
 var _field_card: FieldCard
+var _tap: PanelContainer
+var _banner: PanelContainer
+var _banner_bar: ColorRect
+var _banner_title: Label
+var _banner_sub: Label
 
 func _ready() -> void:
 	_root = Control.new()
@@ -251,6 +256,57 @@ func _ready() -> void:
 	_field_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_field_card.visible = false
 	_root.add_child(_field_card)
+	# "TAP TO BOWL" between balls.
+	_tap = PanelContainer.new()
+	var tsb2 := pill_box(Color(GOLD.r, GOLD.g, GOLD.b, 0.95), 26)
+	tsb2.content_margin_left = 36
+	tsb2.content_margin_right = 36
+	tsb2.content_margin_top = 8
+	tsb2.content_margin_bottom = 12
+	tsb2.shadow_color = Color(0, 0, 0, 0.35)
+	tsb2.shadow_size = 12
+	_tap.add_theme_stylebox_override("panel", tsb2)
+	_tap.anchor_left = 0.5
+	_tap.anchor_right = 0.5
+	_tap.anchor_top = 0.66
+	_tap.anchor_bottom = 0.66
+	_tap.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_tap.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tap.visible = false
+	_tap.add_child(_text("TAP TO BOWL", "bold", 36, NAVY))
+	_root.add_child(_tap)
+	# Lower third for cutscenes: who is walking out, milestones, results.
+	_banner = PanelContainer.new()
+	var bsb := card_box(18, 0.92)
+	bsb.content_margin_left = 0
+	bsb.content_margin_right = 24
+	bsb.content_margin_top = 12
+	bsb.content_margin_bottom = 14
+	_banner.add_theme_stylebox_override("panel", bsb)
+	_banner.anchor_right = 1.0
+	_banner.anchor_top = 1.0
+	_banner.anchor_bottom = 1.0
+	_banner.offset_left = MARGIN
+	_banner.offset_right = -MARGIN
+	_banner.offset_top = -(MARGIN + 250)
+	_banner.offset_bottom = -(MARGIN + 250)
+	_banner.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_banner.visible = false
+	var bh := HBoxContainer.new()
+	bh.add_theme_constant_override("separation", 20)
+	_banner.add_child(bh)
+	_banner_bar = ColorRect.new()
+	_banner_bar.custom_minimum_size = Vector2(10, 0)
+	bh.add_child(_banner_bar)
+	var bv := VBoxContainer.new()
+	bv.add_theme_constant_override("separation", -2)
+	bh.add_child(bv)
+	_banner_title = _text("", "bold", 46, TEXT)
+	bv.add_child(_banner_title)
+	_banner_sub = _text("", "semi", 26, DIM)
+	bv.add_child(_banner_sub)
+	_root.add_child(_banner)
 	_wipe = Wipe.new()
 	_wipe.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_wipe.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -311,6 +367,8 @@ func _process(delta: float) -> void:
 		_fps.text = "%d fps" % Engine.get_frames_per_second()
 	if _trail.get_point_count() > 0 and _trail.modulate.a > 0.0 and not _trail.has_meta("live"):
 		_trail.modulate.a = maxf(0.0, _trail.modulate.a - delta * 3.0)
+	if _tap.visible:
+		_tap.modulate.a = 0.75 + 0.25 * sin(Time.get_ticks_msec() / 230.0)
 	if _prompt != null and _card.visible:
 		_prompt.modulate.a = 0.72 + 0.28 * sin(Time.get_ticks_msec() / 260.0)
 
@@ -423,6 +481,24 @@ func show_field_card(field: Array, info: Dictionary, moved: Array = []) -> void:
 func hide_field_card() -> void:
 	_field_card.visible = false
 	_radar.visible = true
+
+func show_tap_prompt(on: bool) -> void:
+	_tap.visible = on
+
+func show_banner(title: String, sub: String, c: Color) -> void:
+	_banner_title.text = title
+	_banner_sub.text = sub
+	_banner_sub.visible = sub != ""
+	_banner_bar.color = c
+	_banner.visible = true
+	_banner.modulate.a = 0.0
+	_banner.position.x = -60.0
+	var tw := create_tween().set_parallel()
+	tw.tween_property(_banner, "modulate:a", 1.0, 0.25)
+	tw.tween_property(_banner, "offset_left", MARGIN, 0.3).from(MARGIN - 60.0).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+func hide_banner() -> void:
+	_banner.visible = false
 
 func wipe_cancel() -> void:
 	_wipe.visible = false

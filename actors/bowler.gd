@@ -10,6 +10,8 @@ var figure: Figure
 var t := -99.0
 var active := false
 var slow := false          # spinners amble in
+var celebrating := false
+var _ct := 0.0
 
 func build(kit: Color, trim: Color) -> void:
 	figure = Figure.new()
@@ -19,7 +21,15 @@ func build(kit: Color, trim: Color) -> void:
 	figure.build()
 	pose_at(-RUN_TIME)
 
+## Where the bowler ends up after the follow-through, in this node's space.
+const FINISH := Vector3(0.5, 0.0, -2.1)
+
+func celebrate() -> void:
+	celebrating = true
+	_ct = 0.0
+
 func start(spinner: bool) -> void:
+	celebrating = false
 	slow = spinner
 	t = -run_time()
 	active = true
@@ -28,6 +38,17 @@ func run_time() -> float:
 	return 1.5 if slow else RUN_TIME
 
 func _process(delta: float) -> void:
+	if celebrating:
+		_ct += minf(delta, 0.05)
+		var p := Figure.Pose.new()
+		var jump := 0.18 * absf(sin(_ct * 6.5))
+		p.hips = FINISH + Vector3(0, 0.93 + jump, 0)
+		p.foot_l = FINISH + Vector3(-0.15, jump, 0)
+		p.foot_r = FINISH + Vector3(0.15, jump, 0)
+		p.hand_l = FINISH + Vector3(-0.32, 1.98 + jump, -0.1)
+		p.hand_r = FINISH + Vector3(0.32, 1.98 + jump, -0.1)
+		figure.apply(p)
+		return
 	if not active:
 		return
 	t += delta
