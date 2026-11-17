@@ -65,6 +65,7 @@ var _big_tween: Tween
 var _safe_top := 0.0
 var _wipe: Wipe
 var _replay: PanelContainer
+var _field_card: FieldCard
 
 func _ready() -> void:
 	_root = Control.new()
@@ -240,6 +241,16 @@ func _ready() -> void:
 	_replay.visible = false
 	_replay.add_child(_text("REPLAY", "bold", 28, TEXT))
 	_root.add_child(_replay)
+	_field_card = FieldCard.new()
+	_field_card.anchor_right = 1.0
+	_field_card.offset_left = MARGIN
+	_field_card.offset_right = -MARGIN
+	_field_card.anchor_bottom = 1.0
+	_field_card.offset_top = _safe_top + 346
+	_field_card.offset_bottom = -22
+	_field_card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_field_card.visible = false
+	_root.add_child(_field_card)
 	_wipe = Wipe.new()
 	_wipe.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_wipe.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -397,6 +408,22 @@ func wipe(text: String, sub: String, c: Color, hold: float = 0.55) -> void:
 	clear_result()
 	_wipe.play(text, sub, c, hold)
 
+## Before each ball: who is bowling, what they bowl, and where all eleven are.
+## `moved` names the fielders who have just been moved.
+func show_field_card(field: Array, info: Dictionary, moved: Array = []) -> void:
+	clear_result()
+	_field_card.spots = field
+	_field_card.info = info
+	_field_card.moved = moved
+	_field_card.shown_at = Time.get_ticks_msec()
+	_field_card.visible = true
+	_radar.visible = false
+	_field_card.queue_redraw()
+
+func hide_field_card() -> void:
+	_field_card.visible = false
+	_radar.visible = true
+
 func wipe_cancel() -> void:
 	_wipe.visible = false
 
@@ -527,6 +554,120 @@ func trail_points(points: PackedVector2Array) -> void:
 
 func trail_end() -> void:
 	_trail.remove_meta("live")
+
+
+## The pre-ball card: bowler, bowling type, and a big labelled map of the field.
+class FieldCard:
+	extends Control
+	var spots: Array = []
+	var info := {}
+	var moved: Array = []
+	var shown_at := 0
+
+	func _process(_d: float) -> void:
+		if visible:
+			queue_redraw()
+
+	func _t(weight: String, s: String, x: float, y: float, sz: int, c: Color, align: int = HORIZONTAL_ALIGNMENT_LEFT, w: float = -1.0) -> float:
+		draw_string(Hud.font(weight), Vector2(x, y), s, align, w, sz, c)
+		return Hud.font(weight).get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x
+
+	func _draw() -> void:
+		if info.is_empty():
+			return
+		var age := (Time.get_ticks_msec() - shown_at) / 1000.0
+		var w := size.x
+		var h := size.y
+		var x := 28.0
+		var inner := w - 56.0
+		# On tall screens the card stops under its button rather than running to the bottom.
+		var top := 200.0
+		var d := minf(inner - 20.0, h - top - 150.0)
+		draw_style_box(Hud.card_box(30, 0.93, Color(1, 1, 1, 0.12)), Rect2(0, 0, w, top + d + 148.0))
+		var new_over: bool = info.get("new_over", false)
+		# Header: over and ball, bowler, pacer or spinner, what they do.
+		_t("semi", str(info.kicker), x, 44, 24, Hud.GOLD if new_over else Hud.DIM)
+		_t("med", str(info.figures), x, 44, 24, Hud.DIM, HORIZONTAL_ALIGNMENT_RIGHT, inner)
+		_t("bold", str(info.bowler).to_upper(), x, 96, 52, Hud.TEXT)
+		var spinner := str(info.kind) == "SPINNER"
+		var badge_c := Color(0.62, 0.42, 1.0) if spinner else Color(1.0, 0.45, 0.25)
+		var bw := Hud.font("bold").get_string_size(str(info.kind), HORIZONTAL_ALIGNMENT_LEFT, -1, 28).x + 28
+		draw_style_box(Hud.pill_box(badge_c, 10), Rect2(x, 112, bw, 38))
+		_t("bold", str(info.kind), x, 141, 28, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, bw)
+		_t("semi", "%s  ·  %s" % [info.style, info.pace], x + bw + 14, 141, 25, Hud.TEXT)
+		_t("med", str(info.trait), x, 184, 25, Hud.DIM)
+
+		# The field.
+		var c := Vector2(w * 0.5, top + d * 0.5)
+		var r := d * 0.5
+		var k := r / Pitch.BOUNDARY_RADIUS
+		draw_circle(c, r, Color(0.12, 0.40, 0.19))
+		draw_circle(c, Pitch.RING_RADIUS * k, Color(0.15, 0.47, 0.22))
+		draw_arc(c, r, 0.0, TAU, 96, Color(1, 1, 1, 0.9), 2.5, true)
+		draw_arc(c, Pitch.RING_RADIUS * k, 0.0, TAU, 72, Color(1, 1, 1, 0.45), 2.0, true)
+		var p0 := _map(Vector3(-1.5, 0, Pitch.BOWLER_STUMPS_Z), c, k)
+		var p1 := _map(Vector3(1.5, 0, 0), c, k)
+		draw_rect(Rect2(p0, p1 - p0).grow(1.5), Color(0.82, 0.72, 0.52))
+		_t("semi", "OFF SIDE", c.x + r * 0.42, c.y + r * 0.95, 18, Color(1, 1, 1, 0.45))
+		_t("semi", "LEG SIDE", c.x - r * 0.42 - 70.0, c.y + r * 0.95, 18, Color(1, 1, 1, 0.45))
+		# Where this batter has been hitting it: the reason the field is where it is.
+		var bat := _map(Vector3(0, 0, -1.0), c, k)
+		for sh: Array in info.get("shots", []):
+			var a := deg_to_rad(float(sh[0]))
+			var dist := minf(float(sh[1]), 64.0)
+			var end := _map(Vector3(sin(a), 0, -1.0 - cos(a)) * 1.0 + Vector3(sin(a), 0, -cos(a)) * (dist - 1.0), c, k)
+			var runs := int(sh[2])
+			var col := Hud.GOLD if runs == 6 else (Hud.BLUE if runs == 4 else Color(1, 1, 1, 0.35))
+			draw_line(bat, end, Color(col.r, col.g, col.b, 0.7), 2.0, true)
+		for s in spots:
+			if s.name == "bowler":
+				continue
+			var q := _map(s.pos, c, k)
+			var keeper: bool = s.kind == Fielding.Kind.KEEPER
+			var is_new: bool = moved.has(s.name)
+			if is_new:
+				var pulse := 0.5 + 0.5 * sin(age * 6.0)
+				draw_circle(q, 14.0 + 4.0 * pulse, Color(Hud.GOLD.r, Hud.GOLD.g, Hud.GOLD.b, 0.35))
+			draw_circle(q, 9.0, Hud.NAVY)
+			draw_circle(q, 7.0, Hud.GOLD if keeper else Hud.RED)
+			if keeper:
+				continue
+			var label := str(s.name).to_upper()
+			var lw := Hud.font("semi").get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x
+			var lx: float
+			var ly: float
+			if s.kind == Fielding.Kind.DEEP:
+				# On the rope: label on the inside.
+				var at := q + (c - q).normalized() * 28.0
+				lx = at.x - lw * 0.5
+				ly = at.y + 7.0
+			else:
+				# In the ring: label off to the side away from the pitch, and away from the bat
+				# vertically, so pairs either side of the pitch don't collide.
+				var side := signf(q.x - bat.x) if absf(q.x - bat.x) > 3.0 else 1.0
+				lx = q.x + 12.0 if side > 0.0 else q.x - 12.0 - lw
+				ly = q.y + (-8.0 if q.y < bat.y else 22.0)
+			lx = clampf(lx, c.x - r + 4.0, c.x + r - lw - 4.0)
+			draw_style_box(Hud.pill_box(Color(0, 0, 0, 0.5), 6), Rect2(lx - 5, ly - 16, lw + 10, 22))
+			_t("semi", label, lx, ly + 1, 18, Hud.GOLD if is_new else Hud.TEXT)
+		draw_circle(bat, 7.0, Hud.NAVY)
+		draw_circle(bat, 5.5, Hud.BLUE)
+
+		# Footer: the captain's mood, the restriction, and the prompt.
+		var fy := top + d + 18.0
+		var mood := str(info.mood)
+		var mc: Color = info.get("mood_color", Hud.DIM)
+		var mw := Hud.font("bold").get_string_size(mood, HORIZONTAL_ALIGNMENT_LEFT, -1, 22).x + 24
+		draw_style_box(Hud.pill_box(Color(mc.r, mc.g, mc.b, 0.22 if not info.get("mood_changed", false) else 0.22 + 0.2 * (0.5 + 0.5 * sin(age * 6.0))), 10), Rect2(x, fy, mw, 32))
+		_t("bold", mood, x, fy + 24, 22, mc.lightened(0.3), HORIZONTAL_ALIGNMENT_CENTER, mw)
+		_t("semi", str(info.ring), x, fy + 24, 21, Hud.DIM, HORIZONTAL_ALIGNMENT_RIGHT, inner)
+		var py := fy + 50.0
+		var a := 0.75 + 0.25 * sin(age * 4.5)
+		draw_style_box(Hud.pill_box(Color(Hud.GOLD.r, Hud.GOLD.g, Hud.GOLD.b, a), 22), Rect2(x, py, inner, 62))
+		_t("bold", "TAP TO BOWL", x, py + 44, 34, Hud.NAVY, HORIZONTAL_ALIGNMENT_CENTER, inner)
+
+	func _map(p: Vector3, c: Vector2, k: float) -> Vector2:
+		return c + Vector2(p.x - Pitch.FIELD_CENTRE.x, p.z - Pitch.FIELD_CENTRE.z) * k
 
 
 class Wipe:

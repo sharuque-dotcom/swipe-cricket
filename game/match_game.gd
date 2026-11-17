@@ -32,6 +32,7 @@ var umpire: Umpire
 var non_striker: NonStriker
 var _field_over := -1         # the over the field was last set for
 var _mood := "normal"         # the captain's mood the field was last set for
+var _ready_t := 0.0           # how long the field card has been up before this ball
 
 # A boundary or a wicket plays out as: the moment live, the umpire's signal, a full-screen
 # call, then a slow-motion replay from stump height.
@@ -172,18 +173,62 @@ func _next_ball() -> void:
 		if not before.has(sp.name):
 			moved.append(sp.name)
 	_start_delivery(d)
-	if new_over:
-		hud.set_delivery("%s to bowl  ·  %s" % [match_state.bowler_name(), _style_name(match_state.bowler_style())])
 	var mood := Captain.mood(match_state)
-	if mood != _mood:
-		if not new_over and not before.is_empty():
-			hud.set_delivery(Captain.mood_text(mood))
-		_mood = mood
-	elif not new_over and not moved.is_empty() and not before.is_empty():
-		hud.set_delivery("FIELD CHANGE  ·  %s" % ", ".join(moved.slice(0, 2)))
+	var mood_changed := mood != _mood and not before.is_empty()
+	_mood = mood
+	if before.is_empty() or new_over:
+		moved.clear()
 	_reset_fielders()
 	umpire.give(Umpire.Sig.NONE)
 	_refresh_hud()
+	# Hold the bowler at the top of their mark and show the field until the player taps.
+	state = State.READY
+	bowler.active = false
+	bowler.t = -bowler.run_time()
+	bowler.pose_at(bowler.t)
+	_ready_t = 0.0
+	hud.set_delivery("")
+	hud.show_field_card(field, _card_info(new_over, mood, mood_changed), moved)
+
+## Everything the pre-ball card says about the bowler and the field.
+func _card_info(new_over: bool, mood: String, mood_changed: bool) -> Dictionary:
+	var m := match_state
+	var st := _style_info(m.bowler_style())
+	var bi := m.bowler_index()
+	var ball_in_over := m.balls % MatchState.BALLS_PER_OVER + 1
+	var info := st.duplicate()
+	info["kicker"] = ("OVER %d OF %d  ·  NEW BOWLER" % [m.over_index() + 1, MatchState.OVERS]) if new_over \
+		else "OVER %d  ·  BALL %d" % [m.over_index() + 1, ball_in_over]
+	info["new_over"] = new_over
+	info["bowler"] = m.bowler_name()
+	info["figures"] = m.bowler_figures(bi)
+	info["mood"] = {"attack": "ATTACKING FIELD", "defend": "SPREAD FIELD", "save_one": "SAVING THE SINGLE"}.get(mood, "STANDARD FIELD")
+	info["mood_changed"] = mood_changed
+	info["mood_color"] = {"attack": Hud.RED, "defend": Hud.BLUE, "save_one": Hud.GOLD}.get(mood, Hud.DIM)
+	info["ring"] = "%d OUTSIDE THE RING%s" % [Fielding.outside_ring(field), "  ·  POWERPLAY" if m.over_index() < 6 else ""]
+	info["shots"] = m.striker_shots()
+	info["striker"] = m.striker_name()
+	return info
+
+func _style_info(style: String) -> Dictionary:
+	match style:
+		"swing":
+			return {"kind": "PACER", "style": "RIGHT-ARM SWING", "pace": "115–140 KM/H",
+				"trait": "Moves it in the air, both ways"}
+		"off":
+			return {"kind": "SPINNER", "style": "RIGHT-ARM OFF SPIN", "pace": "75–90 KM/H",
+				"trait": "Turns in from off; the arm ball goes straight on"}
+		"leg":
+			return {"kind": "SPINNER", "style": "RIGHT-ARM LEG SPIN", "pace": "75–85 KM/H",
+				"trait": "Turns away from you; watch for the googly"}
+	return {"kind": "PACER", "style": "RIGHT-ARM FAST", "pace": "115–140 KM/H",
+		"trait": "Hits the deck: bouncers, and yorkers at the death"}
+
+## The player has seen the field: the bowler sets off.
+func _bowl() -> void:
+	hud.hide_field_card()
+	state = State.RUNUP
+	bowler.start(delivery.speed < 27.0)
 
 func _reset_fielders() -> void:
 	for i in fielders.size():
@@ -493,6 +538,10 @@ func _on_swipe_started() -> void:
 				match_state = null
 				_new_session()
 			return
+	if state == State.READY and phase != Phase.RESULT:
+		if _ready_t > 0.3:
+			_bowl()
+		return
 	# Tap to skip the replay, or the wait (and any replay) after a ball.
 	if _replaying:
 		_end_replay()
@@ -506,6 +555,10 @@ func _on_swipe_started() -> void:
 
 func _process(delta: float) -> void:
 	super._process(delta)
+	if state == State.READY:
+		_ready_t += delta
+		if autoplay and _ready_t > 0.7:
+			_bowl()
 	if state == State.DEAD:
 		_dead_for += delta
 	if _held:

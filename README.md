@@ -34,6 +34,9 @@ Swipe to play a shot. Lift your finger just before the ball arrives.
 - Fielding restrictions apply: two outside the ring in overs 1 to 6, five after that.
 - The field is set for each batter. Fielders move to where the striker has been hitting it, so
   the gaps open somewhere else and the same shot stops paying.
+- Before every ball the game waits for you: a card shows who is bowling (pacer or spinner, their
+  style, pace and what the ball does), the whole field by name, where this batter has been
+  hitting it, and any fielder who has just moved. Tap to bowl.
 - Read the field. Each over the bowler has a plan (short, wide of off, or full and straight)
   and the field is set for it, so where the fielders are tells you what is coming.
 - The captain reacts to the game: a slip and catchers in for a new batter, the field spread
