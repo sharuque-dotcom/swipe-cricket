@@ -62,6 +62,9 @@ their attack), the season, your career numbers (runs, average, strike rate, high
   a yorker, cuts and upper cuts, pulls (the one-legged pull when you go aerial), hooks, sweeps,
   slog sweeps, reverse sweeps against spin, scoops and ramps. Each batter stands a little
   differently too.
+- At the end of every over the scorecard comes up: each batter's runs, balls, fours, sixes,
+  strike rate and how they got out, who is yet to bat, the fall of wickets and the bowling
+  figures. Switch to the other side's innings to see how they made their total. Tap to go on.
 - Between balls: the openers walk out, the fielders mob the bowler after a wicket while the
   batter walks off and the next one walks in, fifties and hundreds get the bat raised, and the
   winning runs get a celebration. Tap to skip any of it.

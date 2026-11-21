@@ -193,3 +193,34 @@ func test_bowlers_bowl_to_the_plan() -> void:
 			wide += 1
 	check(short > 120, "short-ball plan: %d of 200 banged in" % short)
 	check(wide > 120, "wide plan: %d of 200 outside off" % wide)
+
+func test_scorecard_adds_up() -> void:
+	var m := MatchState.create(12)
+	m.record(4)
+	m.record(1)
+	m.record(0, "c cover b Venn")
+	var sc := m.scorecard()
+	var ours: Dictionary = sc.ours
+	check(ours.batting.size() == 3, "openers and the new batter on the card (%d)" % ours.batting.size())
+	check(ours.yet.size() == 8, "eight yet to bat (%d)" % ours.yet.size())
+	check(str(ours.fow).begins_with("5-1"), "fall of wickets: %s" % ours.fow)
+	var bowled := 0
+	for b: Dictionary in ours.bowling:
+		bowled += int(b.balls)
+	check(bowled == 3, "three balls in the bowling figures")
+	# Their innings: the batters' runs add up to their total, and so do our bowlers' runs.
+	var theirs: Dictionary = sc.theirs
+	var bat_runs := 0
+	for b: Dictionary in theirs.batting:
+		bat_runs += int(b.runs)
+	var bowl_runs := 0
+	var bowl_balls := 0
+	for b: Dictionary in theirs.bowling:
+		bowl_runs += int(b.runs)
+		bowl_balls += int(b.balls)
+	check(bat_runs == m.red_total and bowl_runs == m.red_total, "their card adds up: %d, %d, total %d" % [bat_runs, bowl_runs, m.red_total])
+	var outs := 0
+	for b: Dictionary in theirs.batting:
+		if bool(b.out):
+			outs += 1
+	check(outs == m.red_wickets, "%d out on the card, %d wickets" % [outs, m.red_wickets])

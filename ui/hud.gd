@@ -76,6 +76,14 @@ signal choice_made(index: int)
 var _choice: PanelContainer
 var _choice_col: VBoxContainer
 var choice_buttons: Array[Control] = []
+## The scorecard: shown at the end of each over. Emits `scorecard_closed`.
+signal scorecard_closed
+var _sc: PanelContainer
+var _sc_view: ScorecardView
+var _sc_toggle: Button
+var _sc_data := {}
+var _sc_theirs := false
+var scorecard_buttons: Array[Control] = []
 var _banner: PanelContainer
 var _banner_bar: ColorRect
 var _banner_title: Label
@@ -513,6 +521,83 @@ func hide_field_card() -> void:
 	_field_card.visible = false
 	_radar.visible = true
 
+## The full scorecard for both innings (MatchState.scorecard()). Starts on ours.
+func show_scorecard(data: Dictionary) -> void:
+	if _sc == null:
+		_sc = PanelContainer.new()
+		var sb := card_box(28, 0.97, Color(1, 1, 1, 0.14))
+		sb.content_margin_left = 22
+		sb.content_margin_right = 22
+		sb.content_margin_top = 18
+		sb.content_margin_bottom = 20
+		_sc.add_theme_stylebox_override("panel", sb)
+		_sc.anchor_right = 1.0
+		_sc.offset_left = MARGIN
+		_sc.offset_right = -MARGIN
+		_sc.offset_top = _safe_top + 20
+		_sc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var col := VBoxContainer.new()
+		col.add_theme_constant_override("separation", 12)
+		_sc.add_child(col)
+		_sc_view = ScorecardView.new()
+		_sc_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		col.add_child(_sc_view)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 12)
+		col.add_child(row)
+		_sc_toggle = _sc_button("THEIR INNINGS", false)
+		_sc_toggle.pressed.connect(func():
+			_sc_theirs = not _sc_theirs
+			_sc_refresh())
+		row.add_child(_sc_toggle)
+		var go := _sc_button("CONTINUE", true)
+		go.pressed.connect(func():
+			hide_scorecard()
+			scorecard_closed.emit())
+		row.add_child(go)
+		scorecard_buttons = [_sc_toggle, go]
+		_root.add_child(_sc)
+	_sc_data = data
+	_sc_theirs = false
+	_sc_refresh()
+	clear_result()
+	_scrim.visible = true
+	_sc.visible = true
+
+func _sc_refresh() -> void:
+	_sc_view.view = _sc_data.theirs if _sc_theirs else _sc_data.ours
+	_sc_toggle.text = ("OUR INNINGS" if _sc_theirs else "THEIR INNINGS")
+	_sc_view.update_size()
+	_sc_view.queue_redraw()
+	# Full width; as tall as the card needs.
+	_sc.offset_bottom = _sc.offset_top + _sc.get_combined_minimum_size().y
+
+func _sc_button(text: String, primary: bool) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.focus_mode = Control.FOCUS_NONE
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.custom_minimum_size = Vector2(0, 72)
+	b.add_theme_font_override("font", font("bold"))
+	b.add_theme_font_size_override("font_size", 28)
+	for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+		var bsb := pill_box(GOLD if primary else Color(1, 1, 1, 0.08), 20)
+		if not primary:
+			bsb.border_color = Color(1, 1, 1, 0.25)
+			bsb.set_border_width_all(2)
+		b.add_theme_stylebox_override(st, bsb)
+	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
+		b.add_theme_color_override(c, NAVY if primary else TEXT)
+	return b
+
+func hide_scorecard() -> void:
+	if _sc != null:
+		_sc.visible = false
+	_scrim.visible = _card.visible or choice_visible()
+
+func scorecard_visible() -> bool:
+	return _sc != null and _sc.visible
+
 ## Ask the player to pick one of `options`. The buttons block swipes while they are up.
 func show_choice(kicker: String, title: String, sub: String, options: Array, rows: Array = []) -> void:
 	if _choice == null:
@@ -879,6 +964,106 @@ class FieldCard:
 
 	func _map(p: Vector3, c: Vector2, k: float) -> Vector2:
 		return c + Vector2(p.x - Pitch.FIELD_CENTRE.x, p.z - Pitch.FIELD_CENTRE.z) * k
+
+
+## One innings: the batting card (how out, runs, balls, 4s, 6s, strike rate), who is yet to
+## bat, the fall of wickets and the bowling figures.
+class ScorecardView:
+	extends Control
+	var view := {}
+	const ROW := 46.0
+	const BROW := 34.0
+
+	func _lines(text: String, width: float, sz: int) -> int:
+		if text == "":
+			return 0
+		var w := Hud.font("med").get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x
+		return int(ceilf(w / maxf(width, 1.0)))
+
+	func update_size() -> void:
+		if view.is_empty():
+			return
+		var h: float = 64.0 + 30.0 + ROW * float(view.batting.size())
+		if not view.yet.is_empty():
+			h += 30.0 * maxi(1, _lines("Yet to bat: " + ", ".join(view.yet), size.x if size.x > 10 else 640.0, 19))
+		if str(view.fow) != "":
+			h += 26.0 * maxi(1, _lines("Fall of wickets: " + str(view.fow), size.x if size.x > 10 else 640.0, 18)) + 4.0
+		h += 18.0 + 30.0 + BROW * float(view.bowling.size()) + 26.0
+		custom_minimum_size = Vector2(0, h)
+
+	func _t(weight: String, s: String, x: float, y: float, sz: int, c: Color, align: int = HORIZONTAL_ALIGNMENT_LEFT, w: float = -1.0) -> void:
+		draw_string(Hud.font(weight), Vector2(x, y), s, align, w, sz, c)
+
+	func _wrap(s: String, y: float, sz: int, c: Color) -> float:
+		var words := s.split(" ")
+		var line := ""
+		var f := Hud.font("med")
+		for wd in words:
+			var test := (line + " " + wd).strip_edges()
+			if f.get_string_size(test, HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x > size.x and line != "":
+				_t("med", line, 0, y, sz, c)
+				y += sz + 7
+				line = wd
+			else:
+				line = test
+		if line != "":
+			_t("med", line, 0, y, sz, c)
+			y += sz + 7
+		return y
+
+	func _draw() -> void:
+		if view.is_empty():
+			return
+		var w := size.x
+		# Heading: team, score, overs, what's needed.
+		_t("bold", str(view.team), 0, 30, 30, Hud.TEXT)
+		_t("bold", "%s  (%s ov)" % [view.score, view.overs], 0, 30, 30, Hud.GOLD, HORIZONTAL_ALIGNMENT_RIGHT, w)
+		_t("semi", str(view.status), 0, 54, 19, Hud.DIM)
+		var y := 64.0
+		# Column headings.
+		var cols := [["R", w - 230], ["B", w - 180], ["4s", w - 130], ["6s", w - 85], ["SR", w - 40]]
+		draw_rect(Rect2(0, y, w, 28), Color(1, 1, 1, 0.06))
+		_t("semi", "BATTER", 8, y + 20, 17, Hud.DIM)
+		for c: Array in cols:
+			_t("semi", str(c[0]), float(c[1]) - 20, y + 20, 17, Hud.DIM, HORIZONTAL_ALIGNMENT_RIGHT, 50)
+		y += 30.0
+		for b: Dictionary in view.batting:
+			var live: bool = not b.out
+			var name_c := Hud.TEXT if live else Color(0.85, 0.88, 0.95)
+			var nm := str(b.name) + ("*" if b.on_strike else "")
+			_t("bold", nm, 8, y + 21, 23, Hud.GOLD if live and str(b.how) == "batting" else name_c)
+			var how_c := Hud.GREEN if str(b.how) == "batting" or str(b.how) == "not out" else Hud.DIM
+			_t("med", str(b.how), 8, y + 40, 16, how_c, HORIZONTAL_ALIGNMENT_LEFT, w - 250)
+			var sr := 100.0 * float(b.runs) / maxf(float(b.balls), 1.0)
+			var vals := [str(b.runs), str(b.balls), str(b.fours), str(b.sixes), "%.0f" % sr if int(b.balls) > 0 else "-"]
+			for i in cols.size():
+				_t("bold" if i == 0 else "semi", vals[i], float(cols[i][1]) - 20, y + 28, 26 if i == 0 else 21,
+					Hud.TEXT if i == 0 else Hud.DIM, HORIZONTAL_ALIGNMENT_RIGHT, 50)
+			draw_line(Vector2(0, y + ROW - 1), Vector2(w, y + ROW - 1), Color(1, 1, 1, 0.06), 1.0)
+			y += ROW
+		y += 6.0
+		if not view.yet.is_empty():
+			y = _wrap("Yet to bat: " + ", ".join(view.yet), y + 18, 19, Hud.DIM) - 8
+			y += 8
+		if str(view.fow) != "":
+			y = _wrap("Fall of wickets: " + str(view.fow), y + 18, 18, Hud.DIM) - 4
+		# Bowling.
+		y += 8.0
+		draw_rect(Rect2(0, y, w, 28), Color(1, 1, 1, 0.06))
+		_t("semi", "%s BOWLING" % str(view.bowling_team), 8, y + 20, 17, Hud.DIM)
+		var bcols := [["O", w - 230], ["R", w - 170], ["W", w - 110], ["ECON", w - 40]]
+		for c: Array in bcols:
+			_t("semi", str(c[0]), float(c[1]) - 30, y + 20, 17, Hud.DIM, HORIZONTAL_ALIGNMENT_RIGHT, 60)
+		y += 30.0
+		for bw: Dictionary in view.bowling:
+			var overs := "%d.%d" % [int(bw.balls) / 6, int(bw.balls) % 6]
+			var econ := 6.0 * float(bw.runs) / maxf(float(bw.balls), 1.0)
+			_t("bold", str(bw.name), 8, y + 24, 22, Hud.TEXT)
+			var bv := [overs, str(bw.runs), str(bw.wkts), "%.1f" % econ]
+			for i in bcols.size():
+				_t("bold" if i == 2 else "semi", bv[i], float(bcols[i][1]) - 30, y + 24, 22,
+					Hud.GOLD if i == 2 and int(bw.wkts) > 0 else Hud.TEXT, HORIZONTAL_ALIGNMENT_RIGHT, 60)
+			y += BROW
 
 
 class Wipe:

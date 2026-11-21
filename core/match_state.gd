@@ -46,6 +46,9 @@ var red_name := "RED"
 var career := {}
 ## How the player's own swings went this match: contacts in the green, early, late, misses.
 var timing := {"perfect": 0, "early": 0, "late": 0, "miss": 0}
+var fow: Array = []              # fall of wickets: {score, wkt, over, name}
+var red_card: Array = []         # their innings, batter by batter (InningsSim.batting)
+var red_bowling: Array = []      # and our bowlers' figures in it
 
 ## `opts` (all optional): attack (five names), pitch, night, blue_name, red_name,
 ## target_scale (how strong Red's batting is), lineup (Blue's eleven names), career.
@@ -60,7 +63,11 @@ static func create(rng_seed: int, opts: Dictionary = {}) -> MatchState:
 	m.red_name = str(opts.get("red_name", "RED"))
 	m.career = opts.get("career", {})
 	var strength := float(opts.get("target_scale", 1.0)) * float(Conditions.info(m.pitch).par)
-	var sim := InningsSim.run(rng_seed, RED, strength)
+	var red_names: Array = opts.get("red_lineup", RED)
+	var our: Array = opts.get("lineup", BLUE)
+	var sim := InningsSim.run(rng_seed, red_names, strength, opts.get("blue_bowlers", our.slice(6, 11)), our)
+	m.red_card = sim.batting
+	m.red_bowling = sim.bowling
 	m.red_total = sim.total
 	m.red_wickets = sim.wickets
 	m.red_top = sim.top
@@ -176,6 +183,7 @@ func record(scored: int, how_out: String = "") -> Dictionary:
 	if how_out != "":
 		wickets += 1
 		bat.out = how_out
+		fow.append({"score": runs, "wkt": wickets, "over": overs_text(balls), "name": str(bat.name)})
 		if not how_out.begins_with("run out"):
 			bowling[bi].wkts += 1
 		this_over.append("W")
@@ -233,12 +241,54 @@ func best_bowler() -> String:
 			best = i
 	return "%s %s" % [attack[best], bowler_figures(best)]
 
+## Everything the scorecard shows: our innings so far, and theirs.
+func scorecard() -> Dictionary:
+	var bat := []
+	var yet := []
+	for i in batters.size():
+		var b: Dictionary = batters[i]
+		var batted := int(b.balls) > 0 or str(b.out) != "" or i == striker or i == non_striker
+		if not batted:
+			yet.append(str(b.name))
+			continue
+		var how := str(b.out)
+		if how == "":
+			how = "batting" if not finished() else "not out"
+		bat.append({"name": str(b.name), "how": how, "runs": int(b.runs), "balls": int(b.balls), "fours": int(b.fours),
+			"sixes": int(b.sixes), "on_strike": i == striker and not finished(), "out": str(b.out) != ""})
+	var bowl := []
+	for i in attack.size():
+		var w: Dictionary = bowling[i]
+		if int(w.balls) > 0:
+			bowl.append({"name": str(attack[i]), "balls": int(w.balls), "runs": int(w.runs), "wkts": int(w.wkts)})
+	var falls := []
+	for f in fow:
+		var parts := str(f.name).split(" ")
+		falls.append("%d-%d (%s, %s)" % [int(f.score), int(f.wkt), parts[parts.size() - 1], str(f.over)])
+	var them := []
+	for b: Dictionary in red_card:
+		var how2 := str(b.out) if str(b.out) != "" else "not out"
+		them.append({"name": str(b.name), "how": how2, "runs": int(b.runs), "balls": int(b.balls), "fours": int(b.get("fours", 0)),
+			"sixes": int(b.get("sixes", 0)), "on_strike": false, "out": str(b.out) != ""})
+	var their_bowl := []
+	for w: Dictionary in red_bowling:
+		if int(w.balls) > 0:
+			their_bowl.append({"name": str(w.name), "balls": int(w.balls), "runs": int(w.runs), "wkts": int(w.wkts)})
+	return {
+		"ours": {"team": blue_name, "score": "%d/%d" % [runs, wickets], "overs": overs_text(), "batting": bat, "yet": yet,
+			"fow": ", ".join(falls), "bowling": bowl, "bowling_team": red_name,
+			"status": "" if finished() else "NEED %d OFF %d  ·  REQ. RATE %.1f" % [need(), balls_left(), required_rate()]},
+		"theirs": {"team": red_name, "score": "%d/%d" % [red_total, red_wickets], "overs": "20", "batting": them, "yet": [],
+			"fow": "", "bowling": their_bowl, "bowling_team": blue_name, "status": "TARGET %d" % target},
+	}
+
 func to_dict() -> Dictionary:
 	return {"v": 1, "target": target, "red_total": red_total, "red_wickets": red_wickets, "red_top": red_top,
 		"runs": runs, "wickets": wickets, "balls": balls, "batters": batters, "striker": striker,
 		"non_striker": non_striker, "bowling": bowling, "this_over": this_over,
 		"machine_state": str(machine_state), "seed": seed_value, "attack": attack, "pitch": pitch,
-		"night": night, "blue_name": blue_name, "red_name": red_name, "career": career, "timing": timing}
+		"night": night, "blue_name": blue_name, "red_name": red_name, "career": career, "timing": timing,
+		"fow": fow, "red_card": red_card, "red_bowling": red_bowling}
 
 static func from_dict(d: Dictionary) -> MatchState:
 	var m := MatchState.new()
@@ -270,6 +320,9 @@ static func from_dict(d: Dictionary) -> MatchState:
 	m.career = d.get("career", {})
 	if m.career.has("pos"):
 		m.career.pos = int(m.career.pos)
+	m.fow = d.get("fow", [])
+	m.red_card = d.get("red_card", [])
+	m.red_bowling = d.get("red_bowling", [])
 	var t: Dictionary = d.get("timing", {})
 	for k in m.timing:
 		m.timing[k] = int(t.get(k, 0))

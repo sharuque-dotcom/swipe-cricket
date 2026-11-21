@@ -190,6 +190,9 @@ func _build_fielders() -> void:
 			_ready_t = 0.0)
 	swipe.blockers.append(hud.auto_toggle)
 	hud.choice_made.connect(_on_choice)
+	hud.scorecard_closed.connect(func():
+		if not _scene.is_empty() and str(_scene.kind) == "scorecard":
+			_end_scene())
 
 ## Spinners get a keeper up at the stumps and a long-on instead of a slip.
 func _set_field() -> void:
@@ -651,8 +654,13 @@ func _queue_scenes(ev: Dictionary, hitter: int, had: int, how_out: String, out_l
 		_scenes.append({"kind": "win" if m.won() else "red_win"})
 	elif ev.wicket:
 		_scenes.append({"kind": "wicket", "out": hitter, "how": how_out, "line": out_line, "in": m.striker})
+	if ev.over_end and not ev.finished:
+		_scenes.append({"kind": "scorecard"})
 
 func _scene_length(kind: String) -> float:
+	# The scorecard waits for a tap, unless the bot is playing or auto bowl is on.
+	if kind == "scorecard":
+		return 2.5 if autoplay else (6.0 if auto_bowl else 3600.0)
 	return {"openers": 3.6, "wicket": 4.8, "milestone": 3.0, "win": 3.2, "red_win": 3.0}.get(kind, 3.0)
 
 func _start_scene(sc: Dictionary) -> void:
@@ -707,6 +715,9 @@ func _start_scene(sc: Dictionary) -> void:
 			stadium.crowd_material.set_shader_parameter("excite", 1.0)
 			sfx.play("cheer")
 			hud.show_banner("%s WIN" % m.blue_name, m.result_text().substr(m.result_text().find(" by ") + 1).capitalize(), Hud.BLUE)
+		"scorecard":
+			hud.show_scorecard(m.scorecard())
+			swipe.blockers.append_array(hud.scorecard_buttons)
 		"red_win":
 			_huddle()
 			sfx.play("groan")
@@ -763,12 +774,15 @@ func _end_scene() -> void:
 	_refresh_hud()
 	_reset_fielders()
 	hud.hide_banner()
+	hud.hide_scorecard()
 	stadium.crowd_material.set_shader_parameter("excite", 0.0)
 	state = State.DEAD
 	timer = 0.02
 	_dead_for = 0.0
 
 func _scene_camera() -> void:
+	if str(_scene.kind) == "scorecard":
+		return   # stay on the batting view behind the card
 	var t: float = _scene.t
 	var from := Vector3.ZERO
 	var look := Vector3.ZERO
