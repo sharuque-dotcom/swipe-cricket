@@ -13,6 +13,7 @@ class Swing:
 	var contact_time := 0.0   # ball-clock time at which the bat arrives
 	var skill: BatterSkill = null   # who is batting; null plays as the best batter
 	var advance := 0.0        # how far down the pitch they have come, metres (stepping out)
+	var intent := ""          # "defend", "ground", "lofted" or "" (as the swipe says)
 
 class Result:
 	extends RefCounted
@@ -63,10 +64,21 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 	var sk := swing.skill if swing.skill != null else BatterSkill.new()
 	var pw := clampf(swing.power, 0.0, 1.0)
 	var lf := clampf(swing.loft, 0.0, 1.0)
+	match swing.intent:
+		"defend":
+			pw = minf(pw, Tuning.DEFEND_POWER)
+			lf = 0.0
+		"ground":
+			lf = 0.0
+		"lofted":
+			lf = lerpf(Tuning.LOFT_FLOOR, 1.0, lf)
 	# A controlled push has a wide sweet zone; a full-blooded lofted swing a narrow one.
 	var control := 1.0 - Tuning.POWER_CONTROL_COST * pw * pw - Tuning.LOFT_CONTROL_COST * lf * pw
 	r.perfect_n = Tuning.PERFECT_N * sk.sweet_scale() * control
 	r.clean_n = Tuning.CLEAN_N * sk.clean_scale() * (1.0 - 0.10 * lf * pw)
+	if swing.intent == "defend":
+		r.clean_n = minf(r.clean_n * Tuning.DEFEND_CLEAN, 0.97)
+		r.perfect_n = minf(r.perfect_n * Tuning.DEFEND_SWEET, r.clean_n * 0.75)
 	var w := hit_window(ball, swing.advance)
 	if w.is_empty():
 		r.reason = "Ball never reached the bat"
@@ -79,7 +91,8 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 	r.contact_time = clampf(swing.contact_time, w.t_in, w.t_out)
 	var at := state_at_time(ball, r.contact_time)
 	r.contact_pos = at.pos
-	if at.pos.x < Tuning.REACH_LEG_X or at.pos.x > Tuning.REACH_OFF_X or at.pos.y > Tuning.REACH_TOP_Y:
+	var rs := sk.reach_scale()
+	if at.pos.x < Tuning.REACH_LEG_X * rs or at.pos.x > Tuning.REACH_OFF_X * rs or at.pos.y > Tuning.REACH_TOP_Y:
 		r.reason = "Out of reach"
 		return r
 
@@ -88,14 +101,19 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 	var deg := rad_to_deg(swing.angle)
 	var behind := absf(deg) > 130.0
 	var horizontal := absf(deg) > 50.0 and not behind
-	var named := shot(deg, at.pos.y, swing.loft, speed_in < SPIN_SPEED, swing.advance > 0.0)
+	var named := shot(deg, at.pos.y, lf, speed_in < SPIN_SPEED, swing.advance > 0.0)
 	r.shot_name = named[0]
 	r.style = named[1]
+	if swing.intent == "defend":
+		r.shot_name = "Forward defence" if at.pos.z < -1.25 or swing.advance > 0.0 else "Back-foot defence"
+		r.style = "defend"
 
 	if absf(n) > r.clean_n:
 		r.outcome = Outcome.EDGE
 		r.quality = 0.1
 		var edge_speed := 0.5 * speed_in + 3.0
+		if swing.intent == "defend":
+			edge_speed *= 0.45   # soft hands: it drops short of the cordon
 		if n > 0.0:
 			# Late: outside edge behind the wicket. The later the bat, the finer it goes:
 			# a thin one carries to the keeper, thicker ones to slip or down to third man.
@@ -137,8 +155,8 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 	if behind:
 		out_speed = maxf(out_speed, 0.6 * speed_in * lerpf(0.5, 1.0, r.quality))
 	# Late sends the ball squarer on the off side; early drags it to leg and up.
-	var out_angle := swing.angle + n * Tuning.MISTIME_ANGLE
-	var elev := lerpf(Tuning.LOFT_MIN, Tuning.LOFT_MAX, clampf(swing.loft, 0.0, 1.0))
+	var out_angle := swing.angle + n * Tuning.MISTIME_ANGLE * sk.scatter()
+	var elev := lerpf(Tuning.LOFT_MIN, Tuning.LOFT_MAX, lf)
 	elev += maxf(0.0, -n) * deg_to_rad(lerpf(7.0, 12.0, lf)) - maxf(0.0, n) * deg_to_rad(4.0)
 	if not horizontal and y > 1.0:
 		elev += deg_to_rad(8.0)
@@ -147,7 +165,7 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 	r.exit = _exit(at, out_angle, elev, out_speed)
 	# Lofted shots carry backspin, which holds them up.
 	var flat := Vector3(r.exit.vel.x, 0.0, r.exit.vel.z).normalized()
-	r.exit.spin = Vector3(flat.z, 0.0, -flat.x) * (-90.0 * swing.loft)
+	r.exit.spin = Vector3(flat.z, 0.0, -flat.x) * (-90.0 * lf)
 	return r
 
 static func _exit(at: BallPhysics.State, angle: float, elev: float, speed: float) -> BallPhysics.State:

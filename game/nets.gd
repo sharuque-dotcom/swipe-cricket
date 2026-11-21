@@ -61,6 +61,7 @@ var _swing_angle := 0.0
 var _swing_style := ""
 var _swing_clock := -1.0     # ball-clock time the bat started moving, for replays
 var _charge := 0.0           # how far the batter has come down the pitch this ball
+var intent := "ground"       # the shot chosen before the ball: defend, ground or lofted
 
 # Test hooks: --autoplay swings by itself, --shots=DIR saves frames (--shot-dt, --shots-from, --shots-max).
 var autoplay := false
@@ -153,6 +154,7 @@ func _ready() -> void:
 	add_child(fx)
 	sfx = Sfx.new()
 	add_child(sfx)
+	intent = Settings.get_string("intent", "ground")
 	hud = Hud.new()
 	add_child(hud)
 	swipe = SwipeRecognizer.new()
@@ -160,6 +162,11 @@ func _ready() -> void:
 	swipe.swiped.connect(_on_swiped)
 	swipe.swipe_started.connect(_on_swipe_started)
 	swipe.swipe_moved.connect(hud.trail_points)
+	hud.show_intent(intent)
+	hud.intent_changed.connect(func(i: String):
+		intent = i
+		Settings.set_string("intent", i))
+	swipe.blockers.append_array(hud.intent_buttons)
 	_new_session()
 
 ## A match is played with a white ball (and a black sight screen); the nets with a red one.
@@ -276,6 +283,9 @@ func _try_charge() -> bool:
 	if not early:
 		return false
 	_charge = Tuning.STEP_OUT_SPIN if delivery.speed < Tuning.SPIN_BALL else Tuning.STEP_OUT_PACE
+	var sk := _batter_skill()
+	if sk != null:
+		_charge *= sk.reach_scale()
 	batter.charge(_charge, Tuning.CHARGE_TIME)
 	hud.set_delivery("DOWN THE TRACK")
 	if autoplay:
@@ -312,6 +322,8 @@ func _swing(angle: float, power: float, loft: float, contact_time: float) -> voi
 	sw.contact_time = contact_time
 	sw.skill = _batter_skill()
 	sw.advance = _charge
+	# The bot keeps its own loft; a player's choice of shot decides it for them.
+	sw.intent = ("lofted" if loft > 0.5 else "ground") if autoplay else intent
 	pending = ShotResolver.resolve(launch, sw)
 	var w := ShotResolver.hit_window(launch, _charge)
 	var where := pending.contact_pos

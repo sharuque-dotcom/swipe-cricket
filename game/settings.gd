@@ -10,6 +10,18 @@ static func get_bool(key: String, fallback: bool) -> bool:
 		return fallback
 	return bool(cf.get_value("play", key, fallback))
 
+static func get_string(key: String, fallback: String) -> String:
+	var cf := ConfigFile.new()
+	if cf.load(PATH) != OK:
+		return fallback
+	return str(cf.get_value("play", key, fallback))
+
+static func set_string(key: String, value: String) -> void:
+	var cf := ConfigFile.new()
+	cf.load(PATH)
+	cf.set_value("play", key, value)
+	cf.save(PATH)
+
 static func set_bool(key: String, value: bool) -> void:
 	var cf := ConfigFile.new()
 	cf.load(PATH)

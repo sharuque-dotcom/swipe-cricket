@@ -137,3 +137,49 @@ func test_charging_lofted_shot_is_named_and_animated() -> void:
 	check(n[0] == "Down the track, lofted straight drive" and n[1] == "step_out", str(n))
 	var plain := ShotResolver.shot(0.0, 0.5, 1.0, true, false)
 	check(plain[1] == "loft_drive", "no charge, no step-out animation: %s" % str(plain))
+
+func _intent(b: BallPhysics.State, n: float, intent: String, loft: float = 0.0) -> ShotResolver.Result:
+	var w := ShotResolver.hit_window(b)
+	var sw := ShotResolver.Swing.new()
+	sw.angle = deg_to_rad(10.0)
+	sw.power = 1.0
+	sw.loft = loft
+	sw.intent = intent
+	sw.contact_time = w.t_mid + n * w.half
+	return ShotResolver.resolve(b, sw)
+
+func test_defending_is_forgiving_and_soft() -> void:
+	var b := _ball()
+	var d := _intent(b, 0.0, "defend")
+	var g := _intent(b, 0.0, "ground")
+	check(d.perfect_n > g.perfect_n * 1.5 and d.clean_n > g.clean_n, "defend: bigger sweet spot (%.2f v %.2f)" % [d.perfect_n, g.perfect_n])
+	check(d.exit.vel.length() < g.exit.vel.length() * 0.6, "and the ball comes off soft (%.0f v %.0f m/s)" % [d.exit.vel.length(), g.exit.vel.length()])
+	check(d.shot_name.ends_with("defence") and d.style == "defend", d.shot_name)
+	# A timing that would edge an attacking shot is still met with the middle in defence.
+	var late := 0.7
+	check(_intent(b, late, "defend").outcome == ShotResolver.Outcome.HIT, "defence survives a late one")
+	check(not NetsScoring.evaluate(d.exit).boundary, "a block doesn't reach the rope")
+
+func test_ground_stays_down_and_lofted_goes_up() -> void:
+	var b := _ball()
+	var g := _intent(b, 0.0, "ground", 1.0)
+	var l := _intent(b, 0.0, "lofted", 0.0)
+	check(g.exit.vel.y < l.exit.vel.y, "ground shot lower than lofted")
+	check(NetsScoring.evaluate(g.exit).carry < 25.0, "ground shot pitches early even with a long swipe (%.0f m)" % NetsScoring.evaluate(g.exit).carry)
+	check(NetsScoring.evaluate(l.exit).carry > 40.0, "lofted shot carries even with a short swipe (%.0f m)" % NetsScoring.evaluate(l.exit).carry)
+
+func test_placement_and_footwork_matter() -> void:
+	var b := _ball()
+	var w := ShotResolver.hit_window(b)
+	var outs := []
+	for pl in [0.2, 1.0]:
+		var sw := ShotResolver.Swing.new()
+		sw.angle = 0.0
+		sw.power = 1.0
+		sw.skill = BatterSkill.new("x", 0.8, 0.8, pl, 0.6)
+		sw.contact_time = w.t_mid + 0.5 * w.half
+		var r := ShotResolver.resolve(b, sw)
+		outs.append(absf(atan2(r.exit.vel.x, -r.exit.vel.z)))
+	check(outs[1] < outs[0], "good placement: a mistimed drive goes nearer the aim (%.1f° v %.1f°)" % [rad_to_deg(outs[1]), rad_to_deg(outs[0])])
+	check(BatterSkill.new("x", 1, 1, 0.6, 1.0).reach_scale() > BatterSkill.new("x", 1, 1, 0.6, 0.2).reach_scale(), "footwork reaches further")
+	check(is_equal_approx(BatterSkill.new().scatter(), 1.0) and is_equal_approx(BatterSkill.new().reach_scale(), 1.0), "the defaults change nothing")

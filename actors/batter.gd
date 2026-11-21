@@ -158,6 +158,9 @@ func _contact_bat() -> Array:
 func _follow_bat() -> Array:
 	var up := Vector3.UP
 	match _style:
+		"defend":
+			# Dead bat, soft hands: the bat stays down in front of the pad.
+			return [Vector3(-0.14, 0.92, -1.30), Vector3(0.06, -0.95, 0.12).normalized(), Vector3(0, 0, -1)]
 		"drive":
 			# Hold the pose: high hands, blade up, face to where it went.
 			return [Vector3(-0.20, 1.45, -1.15) + _aim * 0.30, (_aim * 0.55 + up * 0.85).normalized(), _aim]
@@ -306,7 +309,7 @@ func _update(delta: float) -> void:
 					p.chest_yaw = lerp_angle(p.chest_yaw, turn * 0.6 - deg_to_rad(35.0), stride)
 					p.lean = lerpf(p.lean, 0.5, stride)
 				if follow:
-					p.lean = lerpf(p.lean, 0.12 if _style != "drive" else 0.35, k)
+					p.lean = lerpf(p.lean, 0.5 if _style == "defend" else (0.35 if _style == "drive" else 0.12), k)
 					p.chest_yaw = lerp_angle(p.chest_yaw, turn * 0.9, k)
 	elif phase == Phase.BACKLIFT:
 		p.hips.y -= 0.03 * k

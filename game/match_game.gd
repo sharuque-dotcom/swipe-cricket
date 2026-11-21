@@ -260,6 +260,7 @@ func _next_ball() -> void:
 		_career_sim()
 		return
 	phase = Phase.PLAY
+	hud.set_intent_visible(true)
 	if _sim_ticker:
 		hud.hide_banner()
 	_sim_ticker = false
@@ -382,6 +383,7 @@ func _big_moment(text: String, sub: String, c: Color, sig: Umpire.Sig, lead: flo
 func _start_replay() -> void:
 	_replay_pending = false
 	_replaying = true
+	hud.set_intent_visible(false)
 	hud.clear_result()
 	hud.set_delivery("")
 	hud.set_replay(true)
@@ -690,6 +692,7 @@ func _start_scene(sc: Dictionary) -> void:
 	if autoplay:
 		print("scene %s at frame %d" % [sc.kind, _shot_index])
 	_scene = sc
+	hud.set_intent_visible(false)
 	_scene.t = 0.0
 	_scene.dur = _scene_length(sc.kind)
 	phase = Phase.PLAY

@@ -20,6 +20,13 @@ const MISTIME_FALLOFF := 0.65
 # A mistimed lofted shot goes up rather than out.
 const MISTIME_SKY := deg_to_rad(18.0)
 
+# Shot choice. Defend: soft hands, a much bigger sweet spot, little power.
+const DEFEND_POWER := 0.18
+const DEFEND_SWEET := 1.8
+const DEFEND_CLEAN := 1.2
+# Lofted: always in the air; how far the swipe goes still decides how high.
+const LOFT_FLOOR := 0.6
+
 # Batter ability: what the weakest tail-ender keeps of the best batter's numbers.
 const SKILL_POWER_FLOOR := 0.74
 const SKILL_SWEET_FLOOR := 0.50

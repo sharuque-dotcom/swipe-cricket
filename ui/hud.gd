@@ -71,6 +71,12 @@ var _tap_label: Label
 ## The auto-bowl switch, bottom right in a match. Emits `auto_bowl_toggled`.
 var auto_toggle: Button
 signal auto_bowl_toggled(on: bool)
+## The shot chosen before each ball. Emits `intent_changed("defend"|"ground"|"lofted")`.
+signal intent_changed(intent: String)
+var intent_buttons: Array[Control] = []
+var _intent_bar: HBoxContainer
+const INTENTS := [["defend", "DEFEND"], ["ground", "GROUND"], ["lofted", "LOFTED"]]
+
 ## A card with buttons: the game waits for one. Emits `choice_made(index)`.
 signal choice_made(index: int)
 var _choice: PanelContainer
@@ -325,8 +331,8 @@ func _ready() -> void:
 	_banner.anchor_bottom = 1.0
 	_banner.offset_left = MARGIN
 	_banner.offset_right = -MARGIN
-	_banner.offset_top = -(MARGIN + 250)
-	_banner.offset_bottom = -(MARGIN + 250)
+	_banner.offset_top = -(MARGIN + 250 + 78)
+	_banner.offset_bottom = -(MARGIN + 250 + 78)
 	_banner.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_banner.visible = false
@@ -681,6 +687,56 @@ func hide_choice() -> void:
 
 func choice_visible() -> bool:
 	return _choice != null and _choice.visible
+
+## The DEFEND / GROUND / LOFTED switch above the radar, set to `current`.
+func show_intent(current: String) -> void:
+	if _intent_bar == null:
+		_intent_bar = HBoxContainer.new()
+		_intent_bar.add_theme_constant_override("separation", 8)
+		_intent_bar.anchor_right = 1.0
+		_intent_bar.anchor_top = 1.0
+		_intent_bar.anchor_bottom = 1.0
+		_intent_bar.offset_left = MARGIN
+		_intent_bar.offset_right = -MARGIN
+		_intent_bar.offset_top = -(MARGIN + 250 + 64)
+		_intent_bar.offset_bottom = -(MARGIN + 250)
+		_root.add_child(_intent_bar)
+		_root.move_child(_intent_bar, 1)
+		for it: Array in INTENTS:
+			var b := Button.new()
+			b.text = str(it[1])
+			b.toggle_mode = true
+			b.focus_mode = Control.FOCUS_NONE
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b.add_theme_font_override("font", font("bold"))
+			b.add_theme_font_size_override("font_size", 26)
+			var key := str(it[0])
+			b.pressed.connect(func():
+				_set_intent(key)
+				intent_changed.emit(key))
+			_intent_bar.add_child(b)
+			intent_buttons.append(b)
+	_set_intent(current)
+
+func set_intent_visible(on: bool) -> void:
+	if _intent_bar != null:
+		_intent_bar.visible = on
+
+func _set_intent(current: String) -> void:
+	for i in INTENTS.size():
+		var b: Button = intent_buttons[i]
+		var on: bool = INTENTS[i][0] == current
+		b.set_pressed_no_signal(on)
+		var c: Color = {"defend": GREEN, "ground": BLUE, "lofted": GOLD}[INTENTS[i][0]]
+		for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+			var sb := pill_box(Color(c.r, c.g, c.b, 0.92) if on else Color(NAVY.r, NAVY.g, NAVY.b, 0.78), 16)
+			sb.border_color = c if on else Color(1, 1, 1, 0.18)
+			sb.set_border_width_all(2)
+			sb.content_margin_top = 10
+			sb.content_margin_bottom = 12
+			b.add_theme_stylebox_override(st, sb)
+		for k in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
+			b.add_theme_color_override(k, NAVY if on else DIM)
 
 func show_tap_prompt(on: bool, auto: bool = false) -> void:
 	_tap.visible = on
