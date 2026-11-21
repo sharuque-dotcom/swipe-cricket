@@ -184,6 +184,26 @@ func build() -> void:
 			bar.material_override = mat(Color(0.75, 0.75, 0.78), 0.3)
 			_head.add_child(bar)
 
+## Rebuild in new colours (a different team).
+func recolour(new_kit: Color, new_trim: Color) -> void:
+	kit = new_kit
+	trim = new_trim
+	var shirt := ""
+	var number := ""
+	if _number_label != null:
+		shirt = _name_label.text
+		number = _number_label.text
+	for c in get_children():
+		remove_child(c)
+		c.queue_free()
+	_seg.clear()
+	_head = null
+	_name_label = null
+	_number_label = null
+	build()
+	if number != "":
+		set_shirt(shirt, int(number))
+
 ## Name and number on the back of the shirt.
 func set_shirt(shirt_name: String, number: int) -> void:
 	if _number_label == null:

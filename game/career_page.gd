@@ -139,6 +139,7 @@ func _build_hub() -> void:
 		if not resuming:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(MATCH_SAVE))
 		Career.active = true
+		Ipl.active = false
 		get_tree().call_deferred("change_scene_to_file", "res://game/match.tscn")))
 	_col.add_child(nxt)
 

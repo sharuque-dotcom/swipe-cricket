@@ -52,7 +52,12 @@ const ACTIONS := {
 	"wrist": {"run_time": 1.2, "speed": 2.3, "jump": 0.5, "arm_out": 16.0, "side_on": 1.45, "front": "high", "scale": 0.97},
 }
 
+## Bowlers added at run time (IPL squads), looked up the same way.
+static var EXTRA := {}
+
 static func of(bowler_name: String) -> Dictionary:
+	if EXTRA.has(bowler_name):
+		return EXTRA[bowler_name]
 	return ALL.get(bowler_name, ALL["D. Hartigan"])
 
 static func action(action_name: String) -> Dictionary:

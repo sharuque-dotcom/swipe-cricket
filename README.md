@@ -24,6 +24,22 @@ Swipe to play a shot. Lift your finger just before the ball arrives.
 - Speed of the swipe is power.
 - A long swipe lofts the ball; a short one keeps it on the ground.
 
+## IPL 2026 (personal use)
+
+Pick one of the ten franchises and play the 2026 season: the real squads (after the December
+2025 auction, with the March 2026 injury replacements), all 70 league fixtures in their real
+order and grounds, then the play-offs for the top four. You bat in your team's matches, always
+chasing; every other match is simulated ball by ball, so the points table and net run rate
+build up through the season. Each ground plays to type (Chennai and Lucknow turn, Mumbai,
+Bengaluru and Hyderabad are roads, Dharamshala and New Chandigarh seam) and afternoon games
+on double-header days are played in the day.
+
+Your XI bats in a fixed order with its own ratings; the other side bowls its real attack, each
+bowler mapped onto the game's actions (Bumrah's short run and late release, Starc and Boult
+angling it across, Rashid's wrist spin). Teams play in their own colours. Squads and fixtures
+come from Wisden, The Federal, Outlook India and Khel Now; batting orders, ratings and bowling
+styles are the game's own judgement. Real names, no logos: keep this build private.
+
 ## Career
 
 Make a batter (name and role: opener, top order, middle order or finisher) and start in club

@@ -14,6 +14,12 @@ static func ball(m: MatchState, rng: RandomNumberGenerator) -> Array:
 	var over := m.over_index()
 	var w: Array = (InningsSim.POWERPLAY if over < 6 else (InningsSim.DEATH if over >= 16 else InningsSim.MIDDLE)).duplicate()
 	var push := clampf((m.required_rate() - 8.0) / 6.0, -0.5, 1.0)
+	var s := m.chase_scale
+	if s != 1.0:
+		w[0] /= s
+		w[4] *= s
+		w[5] *= s * s
+		w[6] /= s
 	# A batter with power 0.7 and timing 0.75 scores at the tables' rates.
 	w[0] *= (1.45 - 0.6 * sk.timing) * (1.0 - 0.25 * push)
 	w[4] *= (0.4 + 0.85 * sk.power) * (1.0 + 0.45 * push)

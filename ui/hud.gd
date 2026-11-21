@@ -447,8 +447,7 @@ func set_match(m: MatchState) -> void:
 	var b: Dictionary = m.bowling[bi]
 	_top.bowler = m.bowler_name()
 	var prof := m.bowler_profile()
-	_top.bowler_style = ("LEFT-ARM " if str(prof.arm) == "L" else "") + str({"express": "EXPRESS", "sling": "SLINGER", "tall": "FAST",
-		"skiddy": "MEDIUM", "finger": "SPIN", "wrist": "WRIST SPIN"}.get(str(prof.action), ""))
+	_top.bowler_style = str(prof.label).split("  ·  ")[0]
 	_top.figures = "%d-%d" % [b.wkts, b.runs]
 	_top.figures_overs = "(%s)" % m.overs_text(b.balls)
 	_top.over = m.this_over.duplicate()

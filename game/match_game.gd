@@ -81,7 +81,17 @@ func _new_session() -> void:
 				var c := Career.create("Test Player", "Top order")
 				c.next_seed = 5
 				c.save()
-		if Career.active:
+		if Ipl.active:
+			var season := Ipl.load_saved()
+			var fx := season.next_mine() if season != null else {}
+			if fx.is_empty():
+				Ipl.active = false
+			else:
+				season.save()
+				IplData.register_bowlers()
+				opts = season.match_opts(fx, season.team)
+				sd = Ipl.seed_for(fx)
+		if Career.active and not Ipl.active:
 			var car := Career.load_saved()
 			if car == null:
 				Career.active = false
@@ -104,6 +114,10 @@ func _new_session() -> void:
 	else:
 		machine.state = match_state.machine_state
 	Career.active = not match_state.career.is_empty()
+	Ipl.active = not match_state.ipl.is_empty()
+	if Ipl.active:
+		IplData.register_bowlers()
+	_apply_kits()
 	_asked = match_state.player_out() and str(match_state.career.get("mode", "own")) == "team"
 	_waiting_choice = false
 	_fresh = not resumed
@@ -138,6 +152,15 @@ func _new_session() -> void:
 			"rows": [["Need", "%d off %d balls" % [m.need(), m.balls_left()]], ["Required rate", "%.1f" % m.required_rate()],
 				["On strike", m.striker_name()]],
 			"prompt": "Tap to carry on"})
+	elif Ipl.active:
+		var ip: Dictionary = m.ipl
+		var opp: Dictionary = IplData.team(m.red_name)
+		hud.show_card({"kicker": "IPL 2026  ·  %s  ·  %s" % [("MATCH %d" % int(ip.n)) if str(ip.stage) == "League" else str(ip.stage).to_upper(), str(ip.ground).to_upper()],
+			"title": "CHASE %d" % m.target, "sub": "%s v %s" % [IplData.team(m.blue_name).name, opp.name],
+			"rows": [["%s made" % m.red_name, "%d/%d" % [m.red_total, m.red_wickets], Hud.RED], ["Their top score", m.red_top],
+				["Pitch", str(Conditions.info(m.pitch).name).capitalize(), Hud.GOLD],
+				["Played", "Under lights" if m.night else "Afternoon"]],
+			"notes": ["Their attack: " + ", ".join(m.attack.map(func(n): return _surname(str(n))))], "prompt": "Tap to start the chase"})
 	elif Career.active:
 		var c: Dictionary = m.career
 		hud.show_card({"kicker": "%s  ·  MATCH %d OF %d  ·  v %s" % [Career.TIERS[int(c.tier)].name, int(c.match), int(c.of), m.red_name],
@@ -208,9 +231,9 @@ func _set_field() -> void:
 	hud.radar_field(field)
 	# Names on shirts: the bowler's own, and the rest of the Red eleven round the field.
 	var others := []
-	for n: String in MatchState.RED:
-		if n != match_state.bowler_name():
-			others.append(n)
+	for n in match_state.red_names:
+		if str(n) != match_state.bowler_name():
+			others.append(str(n))
 	for i in fielders.size():
 		_shirt(fielders[i].figure, others[i % others.size()])
 	_shirt(bowler.figure, match_state.bowler_name())
@@ -969,6 +992,9 @@ func _show_result() -> void:
 	if Career.active:
 		_career_result(won, tied, text, by)
 		return
+	if Ipl.active:
+		_ipl_result()
+		return
 	hud.show_card({"kicker": "MATCH RESULT", "title": "YOU WIN!" if won else ("TIED!" if tied else "RED WIN"),
 		"sub": "" if tied else ("Blue win" + text.substr(by) if won else text.substr(by + 1)),
 		"accent": Hud.GOLD if won else (Hud.TEXT if tied else Hud.RED),
@@ -1009,6 +1035,63 @@ func _career_result(won: bool, tied: bool, text: String, by: int) -> void:
 		"accent": Hud.GOLD if won else (Hud.TEXT if tied else Hud.RED),
 		"rows": rows, "notes": notes, "prompt": "Tap for your career"})
 
+## Team colours for this match: our batters, their fielders and bowler.
+func _apply_kits() -> void:
+	var k := match_state.kits
+	var blue := [BLUE_KIT, Color(1.0, 0.80, 0.15)]
+	var red := [RED_KIT, Color(1, 1, 1)]
+	if k.has("blue"):
+		blue = [_colour(k.blue[0]), _colour(k.blue[1])]
+	if k.has("red"):
+		red = [_colour(k.red[0]), _colour(k.red[1])]
+	for f in [batter.figure, non_striker.figure, walker_out.figure, walker_in.figure]:
+		if f.kit != blue[0]:
+			f.recolour(blue[0], blue[1])
+	for f in fielders:
+		if f.figure.kit != red[0]:
+			f.figure.recolour(red[0], red[1])
+	if bowler.figure.kit != red[0]:
+		bowler.figure.recolour(red[0], red[1])
+
+static func _colour(v: Variant) -> Color:
+	if v is Color:
+		return v
+	var a: Array = v
+	return Color(float(a[0]), float(a[1]), float(a[2]))
+
+## The end of an IPL match: into the season, and the card says where it leaves you.
+func _ipl_result() -> void:
+	var m := match_state
+	var season := Ipl.load_saved()
+	var res := {}
+	if season != null:
+		res = season.record(m)
+		season.save()
+	var won := str(res.get("winner", "")) == m.blue_name
+	var rows := [[m.blue_name, "%d/%d  (%s ov)" % [m.runs, m.wickets, m.overs_text()], Hud.BLUE],
+		[m.red_name, "%d/%d  (20 ov)" % [m.red_total, m.red_wickets], Hud.RED],
+		["Top scorer", m.top_blue()], ["Best bowler", m.best_bowler()]]
+	var notes := []
+	if season != null:
+		if str(m.ipl.stage) == "League":
+			notes.append("%s are %s in the table with %d points" % [m.blue_name, _ordinal(season.position()),
+				int(season.table()[season.position() - 1].pts)])
+		elif won and str(m.ipl.stage) == "Final":
+			notes.append("IPL 2026 CHAMPIONS!")
+		elif won:
+			notes.append("Through to the next round")
+		elif str(m.ipl.stage) != "Qualifier 1":
+			notes.append("Knocked out")
+	hud.show_card({"kicker": "IPL 2026  ·  %s" % (("MATCH %d" % int(m.ipl.n)) if str(m.ipl.stage) == "League" else str(m.ipl.stage).to_upper()),
+		"title": "WON" if won else "LOST", "sub": str(res.get("text", m.result_text())),
+		"accent": Hud.GOLD if won else Hud.RED, "rows": rows, "notes": notes, "prompt": "Tap for the season"})
+
+static func _ordinal(n: int) -> String:
+	var suffix := "th"
+	if n % 100 < 11 or n % 100 > 13:
+		suffix = {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+	return "%d%s" % [n, suffix]
+
 func _on_swipe_started() -> void:
 	hud.trail_begin()
 	match phase:
@@ -1019,6 +1102,9 @@ func _on_swipe_started() -> void:
 			return
 		Phase.RESULT:
 			if timer > 1.2:
+				if Ipl.active:
+					get_tree().call_deferred("change_scene_to_file", "res://game/ipl.tscn")
+					return
 				if Career.active:
 					get_tree().call_deferred("change_scene_to_file", "res://game/career.tscn")
 					return

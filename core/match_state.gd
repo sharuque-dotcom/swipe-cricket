@@ -47,6 +47,11 @@ var career := {}
 ## How the player's own swings went this match: contacts in the green, early, late, misses.
 var timing := {"perfect": 0, "early": 0, "late": 0, "miss": 0}
 var fow: Array = []              # fall of wickets: {score, wkt, over, name}
+var skills: Array = []           # per batter [role, power, timing]; empty uses BLUE_SKILL
+var kits := {}                   # {"blue": [kit, trim], "red": [kit, trim]} as colour arrays
+var red_names: Array = RED.duplicate()   # their eleven, for shirts in the field
+var chase_scale := 1.0           # how hard simulated chasers hit (BallSim), like InningsSim's strength
+var ipl := {}                    # in an IPL match: {"match": n, "stage": name, "you": code, "opp": code}
 var red_card: Array = []         # their innings, batter by batter (InningsSim.batting)
 var red_bowling: Array = []      # and our bowlers' figures in it
 
@@ -62,6 +67,11 @@ static func create(rng_seed: int, opts: Dictionary = {}) -> MatchState:
 	m.blue_name = str(opts.get("blue_name", "BLUE"))
 	m.red_name = str(opts.get("red_name", "RED"))
 	m.career = opts.get("career", {})
+	m.skills = opts.get("skills", [])
+	m.kits = opts.get("kits", {})
+	m.ipl = opts.get("ipl", {})
+	m.chase_scale = float(opts.get("chase_scale", 1.0))
+	m.red_names = opts.get("red_lineup", RED)
 	var strength := float(opts.get("target_scale", 1.0)) * float(Conditions.info(m.pitch).par)
 	var red_names: Array = opts.get("red_lineup", RED)
 	var our: Array = opts.get("lineup", BLUE)
@@ -131,6 +141,9 @@ func skill_for(i: int) -> BatterSkill:
 		var base := skill_of(i)
 		var k := float(career.get("mates", 1.0))
 		return BatterSkill.new(base.role, base.power * k, base.timing * k)
+	if i < skills.size():
+		var s: Array = skills[i]
+		return BatterSkill.new(str(s[0]), float(s[1]), float(s[2]))
 	return skill_of(i)
 
 func striker_skill() -> BatterSkill:
@@ -288,7 +301,7 @@ func to_dict() -> Dictionary:
 		"non_striker": non_striker, "bowling": bowling, "this_over": this_over,
 		"machine_state": str(machine_state), "seed": seed_value, "attack": attack, "pitch": pitch,
 		"night": night, "blue_name": blue_name, "red_name": red_name, "career": career, "timing": timing,
-		"fow": fow, "red_card": red_card, "red_bowling": red_bowling}
+		"fow": fow, "red_card": red_card, "red_bowling": red_bowling, "skills": skills, "kits": kits, "ipl": ipl, "chase_scale": chase_scale, "red_names": red_names}
 
 static func from_dict(d: Dictionary) -> MatchState:
 	var m := MatchState.new()
@@ -321,6 +334,11 @@ static func from_dict(d: Dictionary) -> MatchState:
 	if m.career.has("pos"):
 		m.career.pos = int(m.career.pos)
 	m.fow = d.get("fow", [])
+	m.skills = d.get("skills", [])
+	m.kits = d.get("kits", {})
+	m.ipl = d.get("ipl", {})
+	m.chase_scale = float(d.get("chase_scale", 1.0))
+	m.red_names = d.get("red_names", RED)
 	m.red_card = d.get("red_card", [])
 	m.red_bowling = d.get("red_bowling", [])
 	var t: Dictionary = d.get("timing", {})
