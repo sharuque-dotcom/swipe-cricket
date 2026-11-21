@@ -58,6 +58,8 @@ var _replay_end := 0.0
 var _replay_swung := false
 var _replay_catch_cam := Vector3.ZERO
 var _bowled_at := 0.0
+var _stumping := false        # the keeper's throw is going at the stumps
+var _stumps_broken := false
 
 func _new_session() -> void:
 	if fielders.is_empty():
@@ -73,6 +75,10 @@ func _new_session() -> void:
 				opts["pitch"] = a.trim_prefix("--pitch=")
 			elif a == "--night" or a == "--day":
 				opts["night"] = a == "--night"
+			elif a == "--spin-first":
+				# The two spinners bowl the first overs (for testing spin).
+				var atk := BowlerProfile.DEFAULT_ATTACK.duplicate()
+				opts["attack"] = [atk[3], atk[4], atk[0], atk[1], atk[2]]
 		match_state = MatchState.create(sd, opts)
 		machine = BowlingMachine.new(sd)
 		match_state.machine_state = machine.state
@@ -285,6 +291,8 @@ func _reset_fielders() -> void:
 	_held = false
 	_throws = false
 	_throw_time = 0.0
+	_stumping = false
+	_stumps_broken = false
 
 func _refresh_hud() -> void:
 	hud.set_match(match_state)
@@ -314,6 +322,7 @@ func _start_replay() -> void:
 	umpire.give(Umpire.Sig.NONE)
 	stadium.batter_stumps.reset()
 	batter.reset()
+	batter.set_advance(_charge)
 	batter.backlift()
 	var hit := pending != null and pending.exit != null
 	_replay_ref = pending.contact_time if hit else _bowled_at
@@ -428,16 +437,24 @@ func _show_ball() -> void:
 			sfx.play("bounce", -9.0)
 	if _held:
 		var at := _taker.hands_global() if _taker != null and _held_for < HOLD_BEFORE_THROW else _hold_pos
-		if _throws and _held_for >= HOLD_BEFORE_THROW:
+		if _throws and _held_for >= (0.15 if _stumping else HOLD_BEFORE_THROW):
 			var keeper := fielders[0]
+			# In to the keeper, or (a stumping) the keeper's underarm flick at the stumps.
+			var to := Vector3(0.0, 0.45, 0.0) if _stumping else keeper.hands_global()
 			if _throw_time <= 0.0:
 				_throw_from = _taker.hands_global()
-				_throw_time = maxf(_throw_from.distance_to(keeper.position) / Fielding.THROW_SPEED, 0.25)
-				_taker.throw_to(keeper.position)
-				keeper.take_throw(_throw_from)
-			var u := clampf((_held_for - HOLD_BEFORE_THROW) / _throw_time, 0.0, 1.0)
-			var arc := _throw_from.distance_to(keeper.position) * 0.07
-			at = _throw_from.lerp(keeper.hands_global(), u) + Vector3.UP * (4.0 * arc * u * (1.0 - u))
+				_throw_time = maxf(_throw_from.distance_to(to) / Fielding.THROW_SPEED, 0.25)
+				_taker.throw_to(to)
+				if not _stumping:
+					keeper.take_throw(_throw_from)
+			var u := clampf((_held_for - (0.15 if _stumping else HOLD_BEFORE_THROW)) / _throw_time, 0.0, 1.0)
+			var arc := _throw_from.distance_to(to) * (0.02 if _stumping else 0.07)
+			at = _throw_from.lerp(to, u) + Vector3.UP * (4.0 * arc * u * (1.0 - u))
+			if _stumping and u >= 1.0 and not _stumps_broken:
+				_stumps_broken = true
+				stadium.batter_stumps.shatter(0.0, 12.0)
+				fx.burst(Vector3(0.0, 0.45, 0.0))
+				sfx.play("stumps")
 		_hold_pos = at
 		ball.pos = at
 		ball.vel = Vector3.ZERO
@@ -509,9 +526,33 @@ func _passed() -> void:
 	if _replaying:
 		_end_replay()
 		return
+	if _charge > 0.0 and _is_spin():
+		_stumped()
+		return
 	super._passed()
 	_keeper_takes()
 	_record(0, "")
+
+## Down the track to a spinner and beaten: the keeper takes it and throws down the stumps.
+func _stumped() -> void:
+	if _replaying:
+		_end_replay()
+		return
+	_bowled_at = ball.time
+	var who := _surname(match_state.striker_name())
+	hud.show_big("STUMPED!", Color(1.0, 0.3, 0.3))
+	sfx.play("groan", -2.0)
+	_explain_miss()
+	_keeper_takes()
+	_throws = _taker != null
+	_stumping = _throws
+	if not _stumping:
+		stadium.batter_stumps.shatter(0.0, 12.0)
+	var how := "st †keeper b %s" % _surname(match_state.bowler_name())
+	state = State.DEAD
+	timer = 2.6
+	_record(0, how)
+	_big_moment("OUT", "%s  %s" % [who, how], Hud.RED, Umpire.Sig.OUT, 1.5)
 
 ## A ball the batter missed or left carries through to the keeper's gloves.
 func _keeper_takes() -> void:
@@ -758,6 +799,8 @@ func _on_swipe_started() -> void:
 	if state == State.READY and phase != Phase.RESULT:
 		if _ready_t > 0.3:
 			_bowl()
+		return
+	if _try_charge():
 		return
 	# Tap to skip the replay, or the wait (and any replay) after a ball.
 	if _replaying:

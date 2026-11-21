@@ -28,8 +28,12 @@ var _tap := 5.0
 # Bat keys: grip position, blade direction, face direction.
 const STANCE_BAT := [Vector3(-0.06, 0.70, -0.88), Vector3(0.04, -0.93, 0.36), Vector3(0, 0, -1)]
 const LIFT_BAT := [Vector3(-0.20, 1.02, -0.66), Vector3(-0.10, 0.62, 0.78), Vector3(0.3, -0.5, -0.8)]
-## How far forward a batter gets when they dance down the track.
-const STEP_OUT := 0.85
+# Stepping out: the whole batter moves down the pitch (this node moves), with quick steps.
+var _charge_to := 0.0
+var _charge_dur := 0.5
+var _charge_t := -1.0
+var _back_t := -1.0       # walking back into the crease
+var _back_from := 0.0
 
 func build(kit: Color, trim: Color) -> void:
 	figure = Figure.new()
@@ -64,7 +68,7 @@ func backlift() -> void:
 ## drive, loft_drive, step_out, helicopter, cut, upper_cut, pull, one_leg_pull, hook,
 ## sweep, slog_sweep, reverse_sweep, flick, glance, scoop, edge. Empty picks from the angle.
 func swing(contact: Vector3, angle: float, style: String = "") -> void:
-	_contact = contact
+	_contact = contact - position   # contact is in the ground's space; poses are in ours
 	_aim = Vector3(sin(angle), 0.0, -cos(angle))
 	var deg := absf(rad_to_deg(angle))
 	_horizontal = deg > 50.0 and deg <= 130.0
@@ -75,6 +79,44 @@ func swing(contact: Vector3, angle: float, style: String = "") -> void:
 
 func reset() -> void:
 	_go(Phase.RECOVER)
+	if position.z < -0.01:
+		_back_t = 0.0
+		_back_from = position.z
+	_charge_t = -1.0
+
+## Dance down the pitch `dist` metres over `seconds`.
+func charge(dist: float, seconds: float) -> void:
+	_charge_to = dist
+	_charge_dur = maxf(seconds, 0.1)
+	_charge_t = 0.0
+	_back_t = -1.0
+
+## Put the batter `dist` down the pitch straight away (replays).
+func set_advance(dist: float) -> void:
+	position.z = -dist
+	_charge_t = -1.0
+	_back_t = -1.0
+
+## How far into the charge or the walk back they are, for stepping feet: 0..1 and the
+## phase of the steps.
+func _steps(delta: float) -> float:
+	if _charge_t >= 0.0:
+		_charge_t += delta
+		var u := clampf(_charge_t / _charge_dur, 0.0, 1.0)
+		position.z = -_charge_to * smoothstep(0.0, 1.0, u)
+		if u >= 1.0:
+			_charge_t = -1.0
+			return 0.0
+		return u * 3.0
+	if _back_t >= 0.0:
+		_back_t += delta
+		var u := clampf(_back_t / 0.7, 0.0, 1.0)
+		position.z = lerpf(_back_from, 0.0, smoothstep(0.0, 1.0, u))
+		if u >= 1.0:
+			_back_t = -1.0
+			return 0.0
+		return u * 3.0
+	return 0.0
 
 ## "milestone": bat raised to the crowd. "win": both arms up, jumping.
 func celebrate(kind: String) -> void:
@@ -175,8 +217,6 @@ func _update(delta: float) -> void:
 				var spin := clampf((_t - 0.06) / 0.5, 0.0, 1.0)
 				var th := spin * TAU * 1.25
 				key = [key[0], Vector3(cos(th) * 0.95, 0.30, -sin(th) * 0.95).normalized(), Vector3(-sin(th), 0, -cos(th))]
-			if _style == "step_out":
-				key = [key[0] + Vector3(0, 0, -STEP_OUT), key[1], key[2]]
 			if _t > 1.25:
 				_go(Phase.RECOVER)
 		Phase.RECOVER:
@@ -268,20 +308,16 @@ func _update(delta: float) -> void:
 				if follow:
 					p.lean = lerpf(p.lean, 0.12 if _style != "drive" else 0.35, k)
 					p.chest_yaw = lerp_angle(p.chest_yaw, turn * 0.9, k)
-		if _style == "step_out":
-			# Danced down the pitch to get to the pitch of the ball.
-			var dz := -STEP_OUT * stride
-			p.hips.z += dz
-			p.foot_r.z += dz * 1.1
-			p.foot_l.z = minf(p.foot_l.z, -1.2 + dz)
 	elif phase == Phase.BACKLIFT:
 		p.hips.y -= 0.03 * k
-	elif phase == Phase.RECOVER and _style == "step_out":
-		# Walk back into the crease.
-		var back := 1.0 - smoothstep(0.0, 0.45, _t)
-		p.hips.z -= STEP_OUT * back
-		p.foot_r.z -= STEP_OUT * back
-		p.foot_l.z -= STEP_OUT * back
+	var steps := _steps(delta)
+	if steps > 0.0:
+		# Quick shuffling steps down (or back up) the pitch: back foot chases the front.
+		var ph := steps * PI
+		p.foot_l.y += 0.14 * maxf(0.0, sin(ph * 2.0))
+		p.foot_r.y += 0.14 * maxf(0.0, -sin(ph * 2.0))
+		p.foot_r.z -= 0.25 * maxf(0.0, sin(ph))
+		p.hips.y += 0.03 * absf(sin(ph * 2.0))
 	var bd := -bat.basis.y
 	p.hand_l = bat.position - bd * 0.07
 	p.hand_r = bat.position + bd * 0.06

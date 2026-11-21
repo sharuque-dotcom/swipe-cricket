@@ -58,6 +58,7 @@ var _swing_where := Vector3.ZERO
 var _swing_angle := 0.0
 var _swing_style := ""
 var _swing_clock := -1.0     # ball-clock time the bat started moving, for replays
+var _charge := 0.0           # how far the batter has come down the pitch this ball
 
 # Test hooks: --autoplay swings by itself, --shots=DIR saves frames (--shot-dt, --shots-from, --shots-max).
 var autoplay := false
@@ -71,6 +72,7 @@ var _bot_rng := RandomNumberGenerator.new()
 var _bot_at := -1.0
 var _bot_shot := {}
 var _bot_wild := 0.85        # --bot-n=1.4 makes the autoplay batter mistime it more
+var _bot_charge := false     # --bot-charge: down the track to every spinner, and miss some
 
 func _ready() -> void:
 	var args := OS.get_cmdline_user_args()
@@ -85,6 +87,8 @@ func _ready() -> void:
 			shots_dir = a.trim_prefix("--shots=")
 		elif a.begins_with("--bot-n="):
 			_bot_wild = float(a.trim_prefix("--bot-n="))
+		elif a == "--bot-charge":
+			_bot_charge = true
 		elif a.begins_with("--shots-from="):
 			shots_from = int(a.trim_prefix("--shots-from="))
 		elif a.begins_with("--shots-max="):
@@ -218,6 +222,8 @@ func _start_delivery(d: Delivery) -> void:
 		t.visible = false
 	stadium.batter_stumps.reset()
 	batter.reset()
+	batter.set_advance(0.0)
+	_charge = 0.0
 	bowler.set_action(delivery.action, delivery.left_arm, delivery.speed < 27.0)
 	bowler.place_for(delivery.release)
 	bowler.start(delivery.speed < 27.0)
@@ -244,6 +250,26 @@ func _on_swipe_started() -> void:
 	hud.trail_begin()
 	if state == State.SUMMARY and timer > 0.6:
 		_new_session()
+		return
+	_try_charge()
+
+## A touch while the bowler is running in (or just after the ball leaves the hand) sends
+## the batter down the pitch. Then they swipe as usual to play the shot.
+func _try_charge() -> bool:
+	if swung or _charge > 0.0:
+		return false
+	var early := (state == State.RUNUP and bowler.t > -1.2) or (state == State.FLIGHT and clock < 0.12)
+	if not early:
+		return false
+	_charge = Tuning.STEP_OUT_SPIN if delivery.speed < Tuning.SPIN_BALL else Tuning.STEP_OUT_PACE
+	batter.charge(_charge, Tuning.CHARGE_TIME)
+	hud.set_delivery("DOWN THE TRACK")
+	if autoplay:
+		print("charge at frame %d" % _shot_index)
+	return true
+
+func _is_spin() -> bool:
+	return delivery != null and delivery.speed < Tuning.SPIN_BALL
 
 func _now() -> float:
 	# Ball-clock time at this instant, including the part of the frame already elapsed.
@@ -271,8 +297,9 @@ func _swing(angle: float, power: float, loft: float, contact_time: float) -> voi
 	sw.loft = loft
 	sw.contact_time = contact_time
 	sw.skill = _batter_skill()
+	sw.advance = _charge
 	pending = ShotResolver.resolve(launch, sw)
-	var w := ShotResolver.hit_window(launch)
+	var w := ShotResolver.hit_window(launch, _charge)
 	var where := pending.contact_pos
 	if pending.outcome == ShotResolver.Outcome.MISS:
 		where = ShotResolver.state_at_time(launch, clampf(contact_time, w.t_in, w.t_out)).pos
@@ -282,7 +309,7 @@ func _swing(angle: float, power: float, loft: float, contact_time: float) -> voi
 	_swing_clock = contact_time - Tuning.SWING_TIME
 	# Misses still play the shot that was meant.
 	_swing_style = pending.style if pending.style != "" \
-		else str(ShotResolver.shot(rad_to_deg(angle), where.y, loft, delivery.speed < 27.0)[1])
+		else str(ShotResolver.shot(rad_to_deg(angle), where.y, loft, delivery.speed < 27.0, _charge > 0.0)[1])
 	batter.swing(where, angle, _swing_style)
 	if autoplay:
 		print("shot %s at frame %d" % [_swing_style, _shot_index])
@@ -300,6 +327,9 @@ func _process(delta: float) -> void:
 			if bowler.t > -0.55:
 				batter.backlift()
 				marker.visible = true
+			# The autoplay batter goes down the track to some spinners.
+			if autoplay and _is_spin() and bowler.t > -0.6 and _charge == 0.0 and (_bot_charge or _bot_rng.randf() < 0.012):
+				_try_charge()
 			if bowler.t >= 0.0:
 				_release()
 		State.FLIGHT, State.HIT:
@@ -326,11 +356,13 @@ func _release() -> void:
 	blob.visible = true
 	hud.set_delivery("%s  %d km/h" % [delivery.label, int(round(delivery.speed_kmh()))])
 	if autoplay:
-		var w := ShotResolver.hit_window(launch)
+		var w := ShotResolver.hit_window(launch, _charge)
 		var n := _bot_rng.randf_range(-_bot_wild, _bot_wild) * _bot_rng.randf()
 		_bot_shot = {"angle": deg_to_rad(_bot_rng.randf_range(-100.0, 100.0)), "power": _bot_rng.randf_range(0.5, 1.0),
 			"loft": 1.0 if _bot_rng.randf() < 0.4 else 0.0, "t": w.t_mid + n * w.half}
 		_bot_at = _bot_shot.t - Tuning.SWING_TIME
+		if _bot_charge and _charge > 0.0 and _bot_rng.randf() < 0.5:
+			_bot_at = -1.0   # beaten in the flight: no shot
 
 func _advance(delta: float) -> void:
 	clock += delta
@@ -459,12 +491,26 @@ func _bowled() -> void:
 func _passed() -> void:
 	state = State.DEAD
 	timer = 1.2
+	if _charge > 0.0 and _is_spin():
+		_stumped()
+		return
 	if swung:
 		hud.show_big("MISSED", Color(0.85, 0.85, 0.9))
 		_explain_miss()
 	else:
 		hud.show_big("LEFT", Color(0.85, 0.85, 0.9))
 		hud.show_shot("No shot offered", "")
+
+## Came down the track to a spinner and missed it.
+func _stumped() -> void:
+	wickets += 1
+	timer = 1.9
+	hud.show_big("STUMPED!", Color(1.0, 0.3, 0.3))
+	stadium.batter_stumps.shatter(0.0, 12.0)
+	sfx.play("stumps")
+	sfx.play("groan", -2.0)
+	_explain_miss()
+	hud.set_score(runs, wickets, ball_no, BALLS)
 
 func _explain_miss() -> void:
 	if pending == null:

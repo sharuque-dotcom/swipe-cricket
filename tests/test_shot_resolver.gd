@@ -109,3 +109,31 @@ func test_harder_swing_has_a_smaller_sweet_zone() -> void:
 	var soft := _swing(_ball(), 0.0, 0.0, 0.3, 0.0)
 	var slog := _swing(_ball(), 0.0, 0.0, 1.0, 1.0)
 	check(slog.perfect_n < soft.perfect_n * 0.7, "slog %.2f v push %.2f" % [slog.perfect_n, soft.perfect_n])
+
+func _spinner() -> BallPhysics.State:
+	var d := Delivery.new()
+	d.release = Vector3(0.5, 2.05, Pitch.BOWLER_CREASE_Z)
+	d.speed = 21.0
+	d.target = Vector3(0.0, 0.0, -3.6)
+	d.spin = Vector3(80.0, -60.0, -220.0)
+	return d.solve()
+
+func test_stepping_out_meets_the_ball_earlier() -> void:
+	var b := _spinner()
+	var home := ShotResolver.hit_window(b)
+	var out := ShotResolver.hit_window(b, Tuning.STEP_OUT_SPIN)
+	check(out.t_mid < home.t_mid - 0.04, "down the track the ball arrives %.0f ms sooner" % ((home.t_mid - out.t_mid) * 1000.0))
+
+func test_stepping_out_smothers_the_turn() -> void:
+	var b := _spinner()
+	var pitched := BallPhysics.state_at_first_bounce(b).pos.x
+	var at_home := BallPhysics.state_at_z(b, -1.1).pos.x
+	var at_charge := BallPhysics.state_at_z(b, -1.1 - Tuning.STEP_OUT_SPIN).pos.x
+	check(absf(at_charge - pitched) < absf(at_home - pitched) * 0.7,
+		"less turn to play down the track (%.2f m v %.2f m)" % [at_charge - pitched, at_home - pitched])
+
+func test_charging_lofted_shot_is_named_and_animated() -> void:
+	var n := ShotResolver.shot(0.0, 0.5, 1.0, true, true)
+	check(n[0] == "Down the track, lofted straight drive" and n[1] == "step_out", str(n))
+	var plain := ShotResolver.shot(0.0, 0.5, 1.0, true, false)
+	check(plain[1] == "loft_drive", "no charge, no step-out animation: %s" % str(plain))

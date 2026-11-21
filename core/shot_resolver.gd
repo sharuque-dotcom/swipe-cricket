@@ -12,6 +12,7 @@ class Swing:
 	var loft := 0.0           # 0..1
 	var contact_time := 0.0   # ball-clock time at which the bat arrives
 	var skill: BatterSkill = null   # who is batting; null plays as the best batter
+	var advance := 0.0        # how far down the pitch they have come, metres (stepping out)
 
 class Result:
 	extends RefCounted
@@ -48,9 +49,10 @@ static func state_at_time(start: BallPhysics.State, t: float) -> BallPhysics.Sta
 	return s
 
 ## Times at which the ball enters and leaves the hitting zone. Empty if it never arrives.
-static func hit_window(ball: BallPhysics.State) -> Dictionary:
-	var a := BallPhysics.state_at_z(ball, Tuning.HIT_ZONE_FRONT_Z)
-	var b := BallPhysics.state_at_z(ball, Tuning.HIT_ZONE_BACK_Z)
+## `advance` moves the zone up the pitch for a batter who has stepped out.
+static func hit_window(ball: BallPhysics.State, advance: float = 0.0) -> Dictionary:
+	var a := BallPhysics.state_at_z(ball, Tuning.HIT_ZONE_FRONT_Z - advance)
+	var b := BallPhysics.state_at_z(ball, Tuning.HIT_ZONE_BACK_Z - advance)
 	if a == null or b == null:
 		return {}
 	var half := (b.time - a.time) * 0.5 + Tuning.BAT_DWELL * 0.5
@@ -65,7 +67,7 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 	var control := 1.0 - Tuning.POWER_CONTROL_COST * pw * pw - Tuning.LOFT_CONTROL_COST * lf * pw
 	r.perfect_n = Tuning.PERFECT_N * sk.sweet_scale() * control
 	r.clean_n = Tuning.CLEAN_N * sk.clean_scale() * (1.0 - 0.10 * lf * pw)
-	var w := hit_window(ball)
+	var w := hit_window(ball, swing.advance)
 	if w.is_empty():
 		r.reason = "Ball never reached the bat"
 		return r
@@ -86,7 +88,7 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 	var deg := rad_to_deg(swing.angle)
 	var behind := absf(deg) > 130.0
 	var horizontal := absf(deg) > 50.0 and not behind
-	var named := shot(deg, at.pos.y, swing.loft, speed_in < SPIN_SPEED)
+	var named := shot(deg, at.pos.y, swing.loft, speed_in < SPIN_SPEED, swing.advance > 0.0)
 	r.shot_name = named[0]
 	r.style = named[1]
 
@@ -162,7 +164,7 @@ const SPIN_SPEED := 26.0
 ## The shot's name and the animation that goes with it, from where the swing was aimed
 ## (degrees, + is the off side), the height of the ball at the bat, the loft, and whether
 ## it was spin. Returns [name, style].
-static func shot(deg: float, y: float, loft: float, spin: bool) -> Array:
+static func shot(deg: float, y: float, loft: float, spin: bool, charged: bool = false) -> Array:
 	var a := absf(deg)
 	var off := deg >= 0.0
 	var lofted := loft > 0.5
@@ -196,8 +198,8 @@ static func shot(deg: float, y: float, loft: float, spin: bool) -> Array:
 		base = "On drive"
 	if lofted and y < 0.36 and deg <= 20.0:
 		return ["Helicopter shot", "helicopter"]
-	if lofted and spin:
-		return ["Down the track, lofted " + base.to_lower(), "step_out"]
+	if charged:
+		return ["Down the track, " + ("lofted " if lofted else "") + base.to_lower(), "step_out" if lofted else "drive"]
 	if lofted:
 		return ["Lofted " + base.to_lower(), "loft_drive"]
 	return [base, "drive"]

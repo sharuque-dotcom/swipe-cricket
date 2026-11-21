@@ -38,6 +38,13 @@ const MISTIME_ANGLE := deg_to_rad(28.0)
 const LOFT_MIN := deg_to_rad(1.5)
 const LOFT_MAX := deg_to_rad(36.0)
 
+# Stepping out: how far down the pitch the batter gets, and how long it takes.
+const STEP_OUT_SPIN := 1.3
+const STEP_OUT_PACE := 0.7
+const CHARGE_TIME := 0.5
+# Below this ball speed (m/s) it is spin: the keeper stands closer and can stump you.
+const SPIN_BALL := 27.0
+
 # Swipe to shot mapping, in fractions of screen height.
 const SWIPE_MIN_LEN := 0.04
 const SWIPE_POWER_SPEED_MIN := 0.6    # screen heights per second

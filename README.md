@@ -39,6 +39,9 @@ Swipe to play a shot. Lift your finger just before the ball arrives.
   waits longer when a new bowler's card is up, and a tap still bowls straight away.
   When a new bowler comes on, a card shows who it is (pacer or spinner, their style, pace and
   what the ball does), the whole field by name, and where this batter has been hitting it.
+- Step out: touch the screen while the bowler is running in and the batter charges down the
+  pitch, then swipe as usual. You meet the ball sooner, before a spinner's turn has taken
+  hold, and can hit it on the full. Get beaten by a spinner and the keeper stumps you.
 - Shots look different: drives, lofted drives, stepping out to spin, the helicopter shot off
   a yorker, cuts and upper cuts, pulls (the one-legged pull when you go aerial), hooks, sweeps,
   slog sweeps, reverse sweeps against spin, scoops and ramps. Each batter stands a little
