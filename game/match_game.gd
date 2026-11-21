@@ -96,8 +96,12 @@ func _new_session() -> void:
 			if car == null:
 				Career.active = false
 			else:
-				opts = car.match_opts()
-				sd = car.next_seed
+				opts = car.match_opts(true)
+				car.save()
+				if opts.is_empty():
+					Career.active = false
+				else:
+					sd = Ipl.seed_for({"n": int(opts.ipl.n)}) if opts.has("ipl") else car.next_seed
 		# Test hooks: --pitch=dusty, --night, --day force the conditions.
 		for a in OS.get_cmdline_user_args():
 			if a.begins_with("--pitch="):
@@ -114,8 +118,8 @@ func _new_session() -> void:
 	else:
 		machine.state = match_state.machine_state
 	Career.active = not match_state.career.is_empty()
-	Ipl.active = not match_state.ipl.is_empty()
-	if Ipl.active:
+	Ipl.active = not match_state.ipl.is_empty() and match_state.career.is_empty()
+	if not match_state.ipl.is_empty():
 		IplData.register_bowlers()
 	_apply_kits()
 	_asked = match_state.player_out() and str(match_state.career.get("mode", "own")) == "team"
@@ -1022,13 +1026,18 @@ func _career_result(won: bool, tied: bool, text: String, by: int) -> void:
 	var rows := [["Your innings", innings, Hud.BLUE]]
 	if str(b.out) != "":
 		rows.append(["How out", str(b.out)])
-	if rep.has("timing_after"):
-		rows.append(["Timing", "%d  →  %d" % [rep.timing_before, rep.timing_after], Hud.GREEN])
-		rows.append(["Power", "%d  →  %d" % [rep.power_before, rep.power_after], Hud.GOLD])
+	# What the match was worth: points earned, and what a cheap dismissal cost.
+	for g: Array in rep.get("gains", []):
+		rows.append([str(g[0]), "+%d" % int(g[1]), Hud.GREEN])
+	for l: Array in rep.get("losses", []):
+		rows.append(["%s: %s" % [l[0], str(l[1]).capitalize()], "-%d" % int(l[2]), Hud.RED])
 	var notes := []
+	if car != null:
+		notes.append("%d skill point%s to spend on your career page" % [car.points, "" if car.points == 1 else "s"])
 	if rep.get("season_over", false):
 		notes.append(str(rep.get("season_line", "")))
-		notes.append("PROMOTED to %s!" % Career.TIERS[car.tier].name if rep.get("promoted", false) else "Season over. Go again.")
+		if rep.get("promoted", false):
+			notes.append("PROMOTED! The IPL auction awaits" if car.tier >= Career.IPL_TIER else "PROMOTED to %s!" % Career.TIERS[car.tier].name)
 	elif car != null:
 		notes.append("Season %d  ·  %s  ·  %d of %d played  ·  %d won" % [car.season, Career.TIERS[car.tier].name,
 			car.match_no, car.matches_in_season(), car.season_wins])

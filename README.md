@@ -43,18 +43,27 @@ styles are the game's own judgement. Real names, no logos: keep this build priva
 ## Career
 
 Make a batter (name and role: opener, top order, middle order or finisher) and start in club
-cricket. Each season is a set of chases; win enough of them, or average 35, and you move up:
-club, state, franchise, international. Bowlers get quicker and totals bigger as you go.
+cricket. Win 3 of 5 in a season, or average 35, to move up to your state side. Do it again and
+three IPL franchises bid for you at the auction (the ones that most need a batter where you
+bat); pick one and you play real IPL seasons in their XI: their squad, the real fixtures and
+grounds, the points table and the play-offs, season after season.
 
 You play your own innings. Team-mates who bat before you are played out at once and a card
 tells you how they got on; while you are at the non-striker's end your partner's balls are
 shown as a quick read-out. When you are out you choose: play the rest of the innings yourself,
 or simulate to the end.
 
-Your ratings grow from how you bat: timing from how often you middle it, power from how far
-you hit it. The career page shows your ratings, the next match (opponent, pitch, day or night,
-their attack), the season, your career numbers (runs, average, strike rate, highest, 50s and
-100s, 4s and 6s), how often you time it in the green, and your recent innings.
+You have four abilities: power (distance and pace off the bat), timing (the size of your sweet
+spot), placement (a mistimed shot stays nearer your aim) and footwork (how far you get down the
+pitch and how far you reach). They only change through skill points:
+
+- earned each match: 1 per 10 runs (up to 10), +2 for a fifty, +5 for a hundred, +1 for a
+  strike rate of 150 (+2 for 200) over at least 10 balls, +1 for timing at least half your
+  shots in the green, +1 for a win and +1 more for being there at the finish;
+- spent on the career page: 1 point per rating point up to 79, 2 up to 89, 3 above that;
+- lost on a bad day: out for under 10 costs 1 (a duck 2) from the ability that got you out
+  (bowled or lbw: timing; caught in the deep: power; caught in the ring: placement; stumped:
+  footwork), and a strike rate under 90 over 15 balls or more costs 1 power.
 
 ## How a match plays
 
@@ -71,6 +80,9 @@ their attack), the season, your career numbers (runs, average, strike rate, high
   waits longer when a new bowler's card is up, and a tap still bowls straight away.
   When a new bowler comes on, a card shows who it is (pacer or spinner, their style, pace and
   what the ball does), the whole field by name, and where this batter has been hitting it.
+- Choose your shot before the ball with the switch above the field map: DEFEND (soft hands,
+  a much bigger sweet spot, hardly any pace off the bat), GROUND (kept down whatever the swipe)
+  or LOFTED (always in the air). The swipe still gives direction and power.
 - Step out: touch the screen while the bowler is running in and the batter charges down the
   pitch, then swipe as usual. You meet the ball sooner, before a spinner's turn has taken
   hold, and can hit it on the full. Get beaten by a spinner and the keeper stumps you.

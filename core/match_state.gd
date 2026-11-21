@@ -137,8 +137,11 @@ static func skill_of(order: int) -> BatterSkill:
 func skill_for(i: int) -> BatterSkill:
 	if not career.is_empty():
 		if i == int(career.pos):
-			return BatterSkill.new("You  ·  " + str(career.role), float(career.power), float(career.timing))
+			return BatterSkill.new("You  ·  " + str(career.role), float(career.power), float(career.timing),
+				float(career.get("placement", 0.6)), float(career.get("footwork", 0.6)))
 		var base := skill_of(i)
+		if i < skills.size():
+			base = BatterSkill.new(str(skills[i][0]), float(skills[i][1]), float(skills[i][2]))
 		var k := float(career.get("mates", 1.0))
 		return BatterSkill.new(base.role, base.power * k, base.timing * k)
 	if i < skills.size():

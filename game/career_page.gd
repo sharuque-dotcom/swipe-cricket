@@ -112,29 +112,53 @@ func _build_hub() -> void:
 	names.add_theme_constant_override("separation", -6)
 	names.add_child(_label(c.name.to_upper(), "bold", 60, Hud.TEXT))
 	names.add_child(_label("%s  ·  %s  ·  SEASON %d" % [c.role.to_upper(), tier.name, c.season], "semi", 24, Hud.GOLD))
-	names.add_child(_label(str(tier.team), "med", 24, Hud.DIM))
+	names.add_child(_label(c.team_name() if c.team_name() != "" else "IPL auction", "med", 24, Hud.DIM))
 	top.add_child(names)
 	top.add_child(_ovr(c.overall()))
 	v.add_child(top)
-	v.add_child(_rating_bar("POWER", c.power, Hud.GOLD))
-	v.add_child(_rating_bar("TIMING", c.timing, Hud.GREEN))
-	v.add_child(_label("Ratings grow from how you bat: middle it to time it better, clear the rope to hit harder.", "med", 22, Hud.DIM, true))
+	if c.points > 0:
+		var pts := PanelContainer.new()
+		var psb := Hud.pill_box(Color(Hud.GOLD.r, Hud.GOLD.g, Hud.GOLD.b, 0.18), 14)
+		psb.content_margin_left = 16
+		psb.content_margin_top = 6
+		psb.content_margin_bottom = 8
+		pts.add_theme_stylebox_override("panel", psb)
+		pts.add_child(_label("%d SKILL POINT%s TO SPEND  ·  tap + to add" % [c.points, "" if c.points == 1 else "S"], "bold", 26, Hud.GOLD))
+		v.add_child(pts)
+	var colours := {"power": Hud.GOLD, "timing": Hud.GREEN, "placement": Hud.BLUE, "footwork": Color(0.75, 0.55, 1.0)}
+	for area: String in Career.AREAS:
+		v.add_child(_ability(area, colours[area]))
+	v.add_child(_label("Points come from runs, fifties and hundreds, strike rate, timing it in the green, and winning. Getting out cheaply costs a point or two from whatever got you out.", "med", 21, Hud.DIM, true))
 	_col.add_child(you)
+
+	if c.tier >= Career.IPL_TIER and c.ipl_team == "":
+		_build_auction()
+		return
 
 	# Next match.
 	var nxt := _card(Hud.BLUE)
 	v = nxt.get_child(0) as VBoxContainer
-	var opts := c.match_opts()
+	var opts := c.match_opts(false)
 	var resuming := _career_match_saved()
-	v.add_child(_label("NEXT MATCH  ·  %d OF %d" % [c.match_no + 1, c.matches_in_season()], "semi", 22, Hud.GOLD))
-	v.add_child(_label("v %s" % opts.red_name, "bold", 50, Hud.TEXT))
+	if opts.is_empty():
+		_col.add_child(nxt)
+		v.add_child(_label("Waiting for the next season", "bold", 36, Hud.TEXT))
+		return
+	if opts.has("ipl"):
+		var ip: Dictionary = opts.ipl
+		var stage := ("MATCH %d OF %d" % [int(opts.career.match), int(opts.career.of)]) if str(ip.stage) == "League" else str(ip.stage).to_upper()
+		v.add_child(_label("IPL  ·  %s  ·  %s  ·  %s" % [stage, IplPage.date_text(str(ip.date)), str(ip.ground).to_upper()], "semi", 22, Hud.GOLD))
+		v.add_child(_label("v %s" % IplData.team(opts.red_name).name, "bold", 42, Hud.TEXT))
+	else:
+		v.add_child(_label("NEXT MATCH  ·  %d OF %d" % [c.match_no + 1, c.matches_in_season()], "semi", 22, Hud.GOLD))
+		v.add_child(_label("v %s" % opts.red_name, "bold", 50, Hud.TEXT))
 	v.add_child(_row("Pitch", str(Conditions.info(str(opts.pitch)).name).capitalize()))
 	v.add_child(_row("Played", "Under lights" if opts.night else "In the day"))
 	var atk := []
 	for n in opts.attack:
 		atk.append(str(n).split(" ")[1])
 	v.add_child(_row("Their attack", ", ".join(atk)))
-	v.add_child(_row("You bat", "No. %d" % (c.position() + 1)))
+	v.add_child(_row("You bat", "No. %d  for %s" % [c.position() + 1, opts.blue_name]))
 	v.add_child(_big_button("CONTINUE MATCH" if resuming else "PLAY", Hud.GOLD, func():
 		if not resuming:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(MATCH_SAVE))
@@ -143,18 +167,32 @@ func _build_hub() -> void:
 		get_tree().call_deferred("change_scene_to_file", "res://game/match.tscn")))
 	_col.add_child(nxt)
 
-	# This season.
+	# This season. In the IPL, the league table.
+	if c.in_ipl():
+		var s := c.ipl()
+		var tab := _card()
+		v = tab.get_child(0) as VBoxContainer
+		v.add_child(_label("IPL SEASON %d  ·  POINTS TABLE" % c.season, "semi", 22, Hud.GOLD))
+		var tv := PointsTable.new()
+		tv.rows = s.table()
+		tv.me = c.ipl_team
+		tv.custom_minimum_size = Vector2(0, 34 + 46 * tv.rows.size())
+		v.add_child(tv)
+		_col.add_child(tab)
 	var sea := _card()
 	v = sea.get_child(0) as VBoxContainer
 	v.add_child(_label("SEASON %d  ·  %s" % [c.season, tier.name], "semi", 22, Hud.GOLD))
 	var outs := maxi(c.season_outs, 1)
 	v.add_child(_tiles([["PLAYED", str(c.match_no)], ["WON", str(c.season_wins)], ["RUNS", str(c.season_runs)],
 		["AVERAGE", "%.1f" % (float(c.season_runs) / outs) if c.season_runs > 0 else "–"]], 4))
-	if c.tier < Career.TIERS.size() - 1:
+	if c.tier == Career.IPL_TIER - 1:
+		v.add_child(_label("Win %d of %d or average %d and the IPL franchises come calling." % [
+			int(ceilf(c.matches_in_season() * Career.PROMOTE_WINS)), c.matches_in_season(), int(Career.PROMOTE_AVERAGE)], "med", 22, Hud.DIM, true))
+	elif c.tier < Career.IPL_TIER:
 		v.add_child(_label("Move up to %s: win %d of %d, or average %d." % [Career.TIERS[c.tier + 1].name,
 			int(ceilf(c.matches_in_season() * Career.PROMOTE_WINS)), c.matches_in_season(), int(Career.PROMOTE_AVERAGE)], "med", 22, Hud.DIM, true))
 	else:
-		v.add_child(_label("The top level. Keep scoring.", "med", 22, Hud.DIM))
+		v.add_child(_label("Playing for %s in the IPL." % c.team_name().capitalize(), "med", 22, Hud.DIM))
 	_col.add_child(sea)
 
 	# Career numbers.
@@ -215,6 +253,68 @@ func _build_hub() -> void:
 		_build())
 	del.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_col.add_child(del)
+
+## One ability: bar, rating, what it does, and a + button when there are points to spend.
+func _ability(area: String, c: Color) -> Control:
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", -2)
+	var h := _rating_bar(area.to_upper(), career.value(area), c)
+	if career.points > 0:
+		var plus := Button.new()
+		var can := career.can_spend(area)
+		plus.text = "+" if career.cost(area) == 1 else "+  (%d)" % career.cost(area)
+		plus.disabled = not can
+		plus.custom_minimum_size = Vector2(70 if career.cost(area) == 1 else 104, 52)
+		plus.add_theme_font_override("font", Hud.font("bold"))
+		plus.add_theme_font_size_override("font_size", 30)
+		for st in ["normal", "hover", "pressed", "hover_pressed", "focus", "disabled"]:
+			var sb := Hud.pill_box(Hud.GOLD if can and st != "disabled" else Color(1, 1, 1, 0.08), 14)
+			plus.add_theme_stylebox_override(st, sb)
+		for k in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
+			plus.add_theme_color_override(k, Hud.NAVY)
+		plus.add_theme_color_override("font_disabled_color", Hud.DIM)
+		plus.pressed.connect(func():
+			if career.spend(area):
+				career.save()
+				_build())
+		h.add_child(plus)
+	v.add_child(h)
+	v.add_child(_label(str(Career.AREA_INFO[area]), "med", 19, Hud.DIM))
+	return v
+
+## Promoted from state cricket: three franchises want you.
+func _build_auction() -> void:
+	var card := _card(Hud.GOLD)
+	var v := card.get_child(0) as VBoxContainer
+	v.add_child(_label("IPL AUCTION", "semi", 24, Hud.GOLD))
+	v.add_child(_label("Three franchises want you", "bold", 46, Hud.TEXT))
+	v.add_child(_label("Pick one. You'll bat at No. %d in their XI and play the whole IPL season with them: their real squad, the real fixtures, the points table and the play-offs." % (career.position() + 1), "med", 23, Hud.DIM, true))
+	for code: String in career.auction:
+		var t := IplData.team(code)
+		var xi: Array = t.xi
+		var b := Button.new()
+		b.custom_minimum_size = Vector2(0, 100)
+		for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+			var sb := Hud.pill_box(Color(1, 1, 1, 0.07 if not st.contains("pressed") else 0.16), 18)
+			sb.border_color = Color(t.kit.r, t.kit.g, t.kit.b, 0.95)
+			sb.border_width_left = 12
+			b.add_theme_stylebox_override(st, sb)
+		var n := _label(str(t.name).to_upper(), "bold", 34, Hud.TEXT)
+		n.position = Vector2(32, 8)
+		n.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(n)
+		var sub := _label("Captain %s  ·  home %s  ·  their No. %d now: %s" % [t.captain, t.home, career.position() + 1, xi[career.position()][0]], "med", 21, Hud.DIM)
+		sub.position = Vector2(32, 56)
+		sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.add_child(sub)
+		var code2 := code
+		b.pressed.connect(func():
+			career.join(code2)
+			career.save()
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(MATCH_SAVE))
+			_build())
+		v.add_child(b)
+	_col.add_child(card)
 
 func _career_match_saved() -> bool:
 	if not FileAccess.file_exists(MATCH_SAVE):
