@@ -4,6 +4,12 @@ extends Node3D
 
 var batter_stumps: Stumps
 var crowd_material: ShaderMaterial
+var _sky_mat: ProceduralSkyMaterial
+var _env: Environment
+var _sun: DirectionalLight3D
+var _pitch_mat: ShaderMaterial
+var _backdrop_mat: ShaderMaterial
+var _lights: Array[Node3D] = []
 
 func build() -> void:
 	_sky()
@@ -20,6 +26,7 @@ func build() -> void:
 
 func _sky() -> void:
 	var sky_mat := ProceduralSkyMaterial.new()
+	_sky_mat = sky_mat
 	# Horizon matches the hazy sky in the stadium photo so the backdrop blends in.
 	sky_mat.sky_top_color = Color(0.42, 0.62, 0.90)
 	sky_mat.sky_horizon_color = Color(0.82, 0.87, 0.91)
@@ -30,6 +37,7 @@ func _sky() -> void:
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
 	var env := Environment.new()
+	_env = env
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	# A fixed ambient colour and no sky reflections: predictable on every phone GPU,
@@ -49,6 +57,7 @@ func _sky() -> void:
 	we.environment = env
 	add_child(we)
 	var sun := DirectionalLight3D.new()
+	_sun = sun
 	sun.rotation_degrees = Vector3(-52.0, 28.0, 0.0)
 	sun.light_energy = 0.72
 	sun.light_color = Color(1.0, 0.96, 0.88)
@@ -99,6 +108,7 @@ func _pitch() -> void:
 	sm.set_shader_parameter("half_width", PITCH_PHOTO_HALF_WIDTH)
 	sm.set_shader_parameter("z_start", PITCH_PHOTO_Z0)
 	sm.set_shader_parameter("z_end", PITCH_PHOTO_Z1)
+	_pitch_mat = sm
 	mi.material_override = sm
 	add_child(mi)
 
@@ -175,6 +185,98 @@ func _backdrop() -> void:
 	var sm := _shader("res://world/backdrop.gdshader")
 	sm.set_shader_parameter("photo", load("res://world/tex/stadium.jpg"))
 	sm.set_shader_parameter("top_fade", 0.06)
+	_backdrop_mat = sm
 	mi.material_override = sm
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
+
+
+## The pitch's colour for its type, and day or night: under lights the sky goes dark, the
+## floodlights come on and light the ground from high above.
+func set_conditions(pitch: String, night: bool) -> void:
+	var p := Conditions.info(pitch)
+	_pitch_mat.set_shader_parameter("tint", p.tint)
+	_pitch_mat.set_shader_parameter("grass", 1.0 if pitch == "green" else (0.25 if pitch == "good" else 0.0))
+	if _lights.is_empty():
+		_build_floodlights()
+	for l in _lights:
+		l.visible = night
+	if night:
+		_sky_mat.sky_top_color = Color(0.015, 0.025, 0.07)
+		_sky_mat.sky_horizon_color = Color(0.10, 0.12, 0.20)
+		_sky_mat.ground_horizon_color = Color(0.10, 0.12, 0.16)
+		_env.ambient_light_color = Color(0.52, 0.58, 0.78)
+		_env.ambient_light_energy = 0.5
+		_env.fog_light_color = Color(0.10, 0.12, 0.18)
+		_sun.rotation_degrees = Vector3(-72.0, 14.0, 0.0)
+		_sun.light_color = Color(0.94, 0.97, 1.0)
+		_sun.light_energy = 0.95
+		_backdrop_mat.set_shader_parameter("tint", Color(0.30, 0.33, 0.46))
+		crowd_material.set_shader_parameter("lit", 0.42)
+		_env.tonemap_exposure = 1.12
+	else:
+		_sky_mat.sky_top_color = Color(0.42, 0.62, 0.90)
+		_sky_mat.sky_horizon_color = Color(0.82, 0.87, 0.91)
+		_sky_mat.ground_horizon_color = Color(0.70, 0.78, 0.74)
+		_env.ambient_light_color = Color(0.66, 0.73, 0.86)
+		_env.ambient_light_energy = 0.78
+		_env.fog_light_color = Color(0.80, 0.85, 0.90)
+		_sun.rotation_degrees = Vector3(-52.0, 28.0, 0.0)
+		_sun.light_color = Color(1.0, 0.96, 0.88)
+		_sun.light_energy = 0.72
+		_backdrop_mat.set_shader_parameter("tint", Color(1, 1, 1))
+		crowd_material.set_shader_parameter("lit", 1.0)
+		_env.tonemap_exposure = 1.05
+
+## Four floodlight towers round the ground, with a glow at the top of each.
+func _build_floodlights() -> void:
+	var glow_tex := GradientTexture2D.new()
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.25, 1.0])
+	g.colors = PackedColorArray([Color(1, 1, 1, 1), Color(1, 0.98, 0.9, 0.55), Color(1, 1, 1, 0)])
+	glow_tex.gradient = g
+	glow_tex.fill = GradientTexture2D.FILL_RADIAL
+	glow_tex.fill_from = Vector2(0.5, 0.5)
+	glow_tex.fill_to = Vector2(1.0, 0.5)
+	for a in [45.0, 135.0, 225.0, 315.0]:
+		var root := Node3D.new()
+		var r := deg_to_rad(a)
+		root.position = Pitch.FIELD_CENTRE + Vector3(cos(r), 0, sin(r)) * 96.0
+		add_child(root)
+		var pole := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.6
+		cm.bottom_radius = 1.0
+		cm.height = 46.0
+		pole.mesh = cm
+		pole.position.y = 23.0
+		pole.material_override = Figure.mat(Color(0.25, 0.27, 0.32))
+		root.add_child(pole)
+		var head := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(10, 6, 1.2)
+		head.mesh = bm
+		head.position.y = 48.0
+		head.rotation.y = -r + PI * 0.5
+		head.material_override = Figure.mat(Color(0.95, 0.96, 1.0))
+		root.add_child(head)
+		var glow := MeshInstance3D.new()
+		var q := QuadMesh.new()
+		q.size = Vector2(34, 34)
+		glow.mesh = q
+		glow.position.y = 48.0
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		m.albedo_texture = glow_tex
+		m.albedo_color = Color(1.0, 0.97, 0.88, 0.9)
+		m.disable_fog = true
+		glow.material_override = m
+		glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(glow)
+		pole.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		head.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.visible = false
+		_lights.append(root)

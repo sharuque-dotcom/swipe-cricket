@@ -18,10 +18,8 @@ const BLUE_SKILL := [
 const RED := ["L. Cole", "B. Hayes", "T. Moreau", "G. Lindqvist", "E. Mbeki", "F. Novak",
 	"O. Reyes", "C. Okafor", "M. Venn", "R. Whitlock", "D. Hartigan"]
 
-## Red's attack: name, style (see BowlingMachine.next_for).
-const BOWLERS := [["M. Venn", "swing"], ["D. Hartigan", "pace"], ["C. Okafor", "pace"],
-	["L. Fernando", "off"], ["R. Whitlock", "leg"]]
-## Who bowls each over: everyone bowls four, nobody bowls two in a row.
+## Who bowls each over (index into `attack`): everyone bowls four, nobody bowls two in a row.
+## Slots 0-2 are the quicks, 3-4 the spinners.
 const PLAN := [0, 1, 0, 1, 2, 0, 3, 4, 3, 4, 2, 3, 4, 3, 2, 4, 1, 2, 0, 1]
 
 var target := 0
@@ -38,20 +36,47 @@ var bowling: Array = []    # per bowler: {balls, runs, wkts}
 var this_over: Array = []  # ball-by-ball marks for the current over
 var machine_state := 0     # BowlingMachine RNG state, so a resumed match bowls the same balls
 var seed_value := 0
+var attack: Array = BowlerProfile.DEFAULT_ATTACK.duplicate()   # Red's five bowlers, by name
+var pitch := "good"        # see Conditions.PITCHES
+var night := false
+var blue_name := "BLUE"
+var red_name := "RED"
+## In a career match: {"pos": batting position of the player's batter, "mode": "own" or "team",
+## "tier": int, "match": int}. Empty for a quick match.
+var career := {}
+## How the player's own swings went this match: contacts in the green, early, late, misses.
+var timing := {"perfect": 0, "early": 0, "late": 0, "miss": 0}
 
-static func create(rng_seed: int) -> MatchState:
+## `opts` (all optional): attack (five names), pitch, night, blue_name, red_name,
+## target_scale (how strong Red's batting is), lineup (Blue's eleven names), career.
+static func create(rng_seed: int, opts: Dictionary = {}) -> MatchState:
 	var m := MatchState.new()
 	m.seed_value = rng_seed
-	var sim := InningsSim.run(rng_seed, RED)
+	var cond := Conditions.pick(rng_seed)
+	m.pitch = str(opts.get("pitch", cond.pitch))
+	m.night = bool(opts.get("night", cond.night))
+	m.attack = opts.get("attack", BowlerProfile.DEFAULT_ATTACK.duplicate())
+	m.blue_name = str(opts.get("blue_name", "BLUE"))
+	m.red_name = str(opts.get("red_name", "RED"))
+	m.career = opts.get("career", {})
+	var strength := float(opts.get("target_scale", 1.0)) * float(Conditions.info(m.pitch).par)
+	var sim := InningsSim.run(rng_seed, RED, strength)
 	m.red_total = sim.total
 	m.red_wickets = sim.wickets
 	m.red_top = sim.top
 	m.target = sim.total + 1
-	for n in BLUE:
+	for n in opts.get("lineup", BLUE):
 		m.batters.append({"name": n, "runs": 0, "balls": 0, "fours": 0, "sixes": 0, "out": ""})
-	for b in BOWLERS:
+	for b in m.attack:
 		m.bowling.append({"balls": 0, "runs": 0, "wkts": 0})
 	return m
+
+## The conditions as BowlingMachine wants them.
+func conditions() -> Dictionary:
+	return {"pitch": pitch, "night": night}
+
+func bowler_profile() -> Dictionary:
+	return BowlerProfile.of(bowler_name())
 
 func over_index() -> int:
 	return balls / BALLS_PER_OVER
@@ -60,10 +85,10 @@ func bowler_index() -> int:
 	return PLAN[mini(over_index(), OVERS - 1)]
 
 func bowler_name() -> String:
-	return BOWLERS[bowler_index()][0]
+	return str(attack[bowler_index()])
 
 func bowler_style() -> String:
-	return BOWLERS[bowler_index()][1]
+	return str(bowler_profile().style)
 
 func overs_text(b: int = -1) -> String:
 	if b < 0:
@@ -164,11 +189,11 @@ func _swap() -> void:
 func result_text() -> String:
 	if won():
 		var left := MAX_WICKETS - wickets
-		return "BLUE WIN by %d wicket%s" % [left, "" if left == 1 else "s"]
+		return "%s WIN by %d wicket%s" % [blue_name, left, "" if left == 1 else "s"]
 	if runs == target - 1:
 		return "MATCH TIED"
 	var margin := target - 1 - runs
-	return "RED WIN by %d run%s" % [margin, "" if margin == 1 else "s"]
+	return "%s WIN by %d run%s" % [red_name, margin, "" if margin == 1 else "s"]
 
 func top_blue() -> String:
 	var best := 0
@@ -184,13 +209,14 @@ func best_bowler() -> String:
 		var b: Dictionary = bowling[best]
 		if a.wkts > b.wkts or (a.wkts == b.wkts and a.balls > 0 and a.runs < b.runs):
 			best = i
-	return "%s %s" % [BOWLERS[best][0], bowler_figures(best)]
+	return "%s %s" % [attack[best], bowler_figures(best)]
 
 func to_dict() -> Dictionary:
 	return {"v": 1, "target": target, "red_total": red_total, "red_wickets": red_wickets, "red_top": red_top,
 		"runs": runs, "wickets": wickets, "balls": balls, "batters": batters, "striker": striker,
 		"non_striker": non_striker, "bowling": bowling, "this_over": this_over,
-		"machine_state": str(machine_state), "seed": seed_value}
+		"machine_state": str(machine_state), "seed": seed_value, "attack": attack, "pitch": pitch,
+		"night": night, "blue_name": blue_name, "red_name": red_name, "career": career, "timing": timing}
 
 static func from_dict(d: Dictionary) -> MatchState:
 	var m := MatchState.new()
@@ -214,4 +240,15 @@ static func from_dict(d: Dictionary) -> MatchState:
 	m.this_over = d.this_over
 	m.machine_state = int(str(d.machine_state))
 	m.seed_value = int(d.seed)
+	m.attack = d.get("attack", BowlerProfile.DEFAULT_ATTACK.duplicate())
+	m.pitch = str(d.get("pitch", "good"))
+	m.night = bool(d.get("night", false))
+	m.blue_name = str(d.get("blue_name", "BLUE"))
+	m.red_name = str(d.get("red_name", "RED"))
+	m.career = d.get("career", {})
+	if m.career.has("pos"):
+		m.career.pos = int(m.career.pos)
+	var t: Dictionary = d.get("timing", {})
+	for k in m.timing:
+		m.timing[k] = int(t.get(k, 0))
 	return m

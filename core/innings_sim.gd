@@ -27,7 +27,9 @@ static func _pick(rng: RandomNumberGenerator, weights: Array) -> int:
 			return i
 	return weights.size() - 1
 
-static func run(rng_seed: int, names: Array) -> Result:
+## `strength` scales how well they bat: below 1 a weaker side (club cricket), above 1 a
+## stronger one, by shifting dots and wickets into boundaries.
+static func run(rng_seed: int, names: Array, strength: float = 1.0) -> Result:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = rng_seed
 	var out := Result.new()
@@ -41,7 +43,12 @@ static func run(rng_seed: int, names: Array) -> Result:
 	var next_in := 2
 	for b in MatchState.OVERS * MatchState.BALLS_PER_OVER:
 		var over := b / MatchState.BALLS_PER_OVER
-		var w: Array = POWERPLAY if over < 6 else (DEATH if over >= 16 else MIDDLE)
+		var w: Array = (POWERPLAY if over < 6 else (DEATH if over >= 16 else MIDDLE)).duplicate()
+		if strength != 1.0:
+			w[0] /= strength
+			w[4] *= strength
+			w[5] *= strength * strength
+			w[6] /= strength
 		var k := _pick(rng, w)
 		out.balls += 1
 		faced[striker] += 1

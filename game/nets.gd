@@ -183,6 +183,8 @@ func _disc(radius: float, c: Color, hole: float = 0.0) -> MeshInstance3D:
 	return mi
 
 func _new_session() -> void:
+	Conditions.reset()
+	stadium.set_conditions("good", false)
 	machine = BowlingMachine.new(int(Time.get_unix_time_from_system()) if not autoplay else 11)
 	runs = 0
 	wickets = 0
@@ -216,7 +218,8 @@ func _start_delivery(d: Delivery) -> void:
 		t.visible = false
 	stadium.batter_stumps.reset()
 	batter.reset()
-	bowler.position = Vector3(delivery.release.x + 0.27, 0.0, delivery.release.z - 0.2)
+	bowler.set_action(delivery.action, delivery.left_arm, delivery.speed < 27.0)
+	bowler.place_for(delivery.release)
 	bowler.start(delivery.speed < 27.0)
 	var pitch_at := BallPhysics.state_at_first_bounce(launch)
 	marker.position = Vector3(pitch_at.pos.x, 0.03, pitch_at.pos.z)

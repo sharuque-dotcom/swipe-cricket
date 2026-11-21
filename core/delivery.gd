@@ -6,8 +6,12 @@ var release := Vector3(0.45, 2.15, Pitch.BOWLER_CREASE_Z)
 var speed := 34.0
 var target := Vector3(0.1, 0.0, -6.0)   # where the ball should pitch
 var swing := 0.0
+var seam := 0.0                         # sideways movement off the pitch, m/s (+ toward +X)
+var bounce_var := 0.0                   # extra or less bounce off a worn pitch, as a fraction
 var spin := Vector3.ZERO
 var label := "Pace"
+var action := ""                        # the bowler's action, for the animation (BowlerProfile)
+var left_arm := false
 
 func speed_kmh() -> float:
 	return speed * 3.6
@@ -19,6 +23,8 @@ func _launch(pitch_angle: float, aim_x: float) -> BallPhysics.State:
 	s.vel = (flat * cos(pitch_angle) + Vector3.UP * sin(pitch_angle)) * speed
 	s.spin = spin
 	s.swing = swing
+	s.seam = seam
+	s.bounce_var = bounce_var
 	return s
 
 ## Finds the launch that pitches the ball on `target`, accounting for drag and swing.

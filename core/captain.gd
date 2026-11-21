@@ -10,7 +10,7 @@ extends RefCounted
 ## The plan for an over: "" (no particular plan), "short", "wide" or "straight".
 static func plan(rng_seed: int, over: int, style: String) -> String:
 	var roll := absi(hash(rng_seed * 31 + over * 7919)) % 100
-	if style == "off" or style == "leg":
+	if BowlerProfile.is_spin(style):
 		# Spinners don't bang it in.
 		if roll < 35:
 			return ""
@@ -43,7 +43,7 @@ static func mood(m: MatchState) -> String:
 
 static func field(m: MatchState) -> Array[Fielding.Spot]:
 	var style := m.bowler_style()
-	return Fielding.layout(style == "off" or style == "leg", m.over_index() < 6, m.striker_shots(),
+	return Fielding.layout(BowlerProfile.is_spin(style), m.over_index() < 6, m.striker_shots(),
 		plan(m.seed_value, m.over_index(), style), mood(m))
 
 ## What to tell the batter when the mood changes.

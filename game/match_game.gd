@@ -66,7 +66,14 @@ func _new_session() -> void:
 	var resumed := _load()
 	if not resumed:
 		var sd := int(Time.get_unix_time_from_system()) if not autoplay else 21
-		match_state = MatchState.create(sd)
+		var opts := {}
+		# Test hooks: --pitch=dusty, --night, --day force the conditions.
+		for a in OS.get_cmdline_user_args():
+			if a.begins_with("--pitch="):
+				opts["pitch"] = a.trim_prefix("--pitch=")
+			elif a == "--night" or a == "--day":
+				opts["night"] = a == "--night"
+		match_state = MatchState.create(sd, opts)
 		machine = BowlingMachine.new(sd)
 		match_state.machine_state = machine.state
 	else:
@@ -79,6 +86,7 @@ func _new_session() -> void:
 	timer = 0.0
 	phase = Phase.INTRO
 	hit_view_cap = 6.0
+	stadium.set_conditions(match_state.pitch, match_state.night)
 	_field_over = -1
 	_scenes.clear()
 	_scene = {}
@@ -103,9 +111,10 @@ func _new_session() -> void:
 			"prompt": "Tap to carry on"})
 	else:
 		hud.show_card({"kicker": "20-OVER MATCH  ·  SECOND INNINGS", "title": "CHASE %d" % m.target, "sub": "off 120 balls",
-			"rows": [["RED made", "%d/%d" % [m.red_total, m.red_wickets], Hud.RED], ["Their top score", m.red_top],
-				["Required rate", "%.1f" % m.required_rate()]],
-			"notes": ["Time it in the green to clear the rope.\nYour bowlers can't hit like your openers."],
+			"rows": [["%s made" % m.red_name, "%d/%d" % [m.red_total, m.red_wickets], Hud.RED], ["Their top score", m.red_top],
+				["Pitch", str(Conditions.info(m.pitch).name).capitalize(), Hud.GOLD],
+				["Played", "Under lights" if m.night else "In the day"]],
+			"notes": [str(Conditions.info(m.pitch).blurb) + (".\nDew will come in later: the ball skids on." if m.night else ".")],
 			"prompt": "Tap to start the chase"})
 
 func _build_fielders() -> void:
@@ -144,7 +153,7 @@ func _build_fielders() -> void:
 
 ## Spinners get a keeper up at the stumps and a long-on instead of a slip.
 func _set_field() -> void:
-	_spinner_field = match_state.bowler_style() == "off" or match_state.bowler_style() == "leg"
+	_spinner_field = BowlerProfile.is_spin(match_state.bowler_style())
 	field = Captain.field(match_state)
 	for i in fielders.size():
 		var f := fielders[i]
@@ -191,8 +200,10 @@ func _next_ball() -> void:
 	_throw_time = 0.0
 	ball_no = match_state.balls + 1
 	machine.state = match_state.machine_state
+	Conditions.apply(match_state.pitch, match_state.night, match_state.over_index())
 	var d := machine.next_for(match_state.bowler_style(), match_state.over_index(),
-		Captain.plan(match_state.seed_value, match_state.over_index(), match_state.bowler_style()))
+		Captain.plan(match_state.seed_value, match_state.over_index(), match_state.bowler_style()),
+		match_state.bowler_profile(), match_state.conditions())
 	match_state.machine_state = machine.state
 	# The captain sets the field every ball, for whoever is on strike and what they have
 	# been doing. Say so when somebody moves.
@@ -236,7 +247,7 @@ func _next_ball() -> void:
 ## Everything the pre-ball card says about the bowler and the field.
 func _card_info(new_over: bool, mood: String, mood_changed: bool) -> Dictionary:
 	var m := match_state
-	var st := _style_info(m.bowler_style())
+	var st := _style_info(m.bowler_profile())
 	var bi := m.bowler_index()
 	var ball_in_over := m.balls % MatchState.BALLS_PER_OVER + 1
 	var info := st.duplicate()
@@ -254,19 +265,9 @@ func _card_info(new_over: bool, mood: String, mood_changed: bool) -> Dictionary:
 	info["auto"] = auto_bowl
 	return info
 
-func _style_info(style: String) -> Dictionary:
-	match style:
-		"swing":
-			return {"kind": "PACER", "style": "RIGHT-ARM SWING", "pace": "115–140 KM/H",
-				"trait": "Moves it in the air, both ways"}
-		"off":
-			return {"kind": "SPINNER", "style": "RIGHT-ARM OFF SPIN", "pace": "75–90 KM/H",
-				"trait": "Turns in from off; the arm ball goes straight on"}
-		"leg":
-			return {"kind": "SPINNER", "style": "RIGHT-ARM LEG SPIN", "pace": "75–85 KM/H",
-				"trait": "Turns away from you; watch for the googly"}
-	return {"kind": "PACER", "style": "RIGHT-ARM FAST", "pace": "115–140 KM/H",
-		"trait": "Hits the deck: bouncers, and yorkers at the death"}
+func _style_info(p: Dictionary) -> Dictionary:
+	return {"kind": "SPINNER" if BowlerProfile.is_spin(str(p.style)) else "PACER", "style": str(p.label),
+		"pace": BowlerProfile.pace_text(p), "trait": str(p.trait)}
 
 ## The player has seen the field: the bowler sets off.
 func _bowl() -> void:
@@ -626,7 +627,7 @@ func _start_scene(sc: Dictionary) -> void:
 
 ## Fielders within reach run in to the bowler and jump; the rest celebrate where they are.
 func _huddle() -> void:
-	var centre := bowler.to_global(Bowler.FINISH)
+	var centre := bowler.to_global(bowler.finish_point())
 	centre.y = 0.0
 	bowler.celebrate()
 	var near := []
@@ -691,7 +692,7 @@ func _scene_camera() -> void:
 			look = mid + Vector3(0, 1.0, 0)
 		"wicket":
 			if t < 2.0:
-				var c := bowler.to_global(Bowler.FINISH)
+				var c := bowler.to_global(bowler.finish_point())
 				from = c + Vector3(-6.5, 2.6, 5.5)
 				look = c + Vector3(0, 1.0, 0)
 			else:
@@ -701,7 +702,7 @@ func _scene_camera() -> void:
 				from = p + dir * 5.0 + Vector3(0, 1.7, 0) + Vector3(-dir.z, 0, dir.x) * 1.4
 				look = p + Vector3(0, 1.05, 0)
 		"red_win":
-			var c := bowler.to_global(Bowler.FINISH)
+			var c := bowler.to_global(bowler.finish_point())
 			from = c + Vector3(-6.5, 2.6, 5.5)
 			look = c + Vector3(0, 1.0, 0)
 		_:

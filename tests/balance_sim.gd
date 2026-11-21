@@ -14,13 +14,18 @@ func _play(sigma: float, style: String, sd: int) -> Dictionary:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = sd
 	var machine := BowlingMachine.new(sd * 7 + 1)
-	var m := MatchState.create(sd)
+	var opts := {}
+	if _pitch != "":
+		opts = {"pitch": _pitch, "night": _night}
+	var m := MatchState.create(sd, opts)
+	m.attack = BowlerProfile.attack_for(sd)
 	var fours := 0
 	var sixes := 0
 	while not m.finished():
 		var over := m.over_index()
 		var style_b := m.bowler_style()
-		var d := machine.next_for(style_b, over, Captain.plan(m.seed_value, over, style_b))
+		Conditions.apply(m.pitch, m.night, over)
+		var d := machine.next_for(style_b, over, Captain.plan(m.seed_value, over, style_b), m.bowler_profile(), m.conditions())
 		var launch := d.solve()
 		var w := ShotResolver.hit_window(launch)
 		var sw := ShotResolver.Swing.new()
@@ -90,11 +95,18 @@ func _gap(field: Array, lofted: bool, rng: RandomNumberGenerator) -> float:
 	scored.sort_custom(func(x, y): return x[0] > y[0])
 	return scored[rng.randi() % 3][1]
 
+var _pitch := ""
+var _night := false
+
 func _sigmas() -> Array:
 	var out := []
 	for a in OS.get_cmdline_user_args():
 		if a.is_valid_float():
 			out.append(float(a))
+		elif a.begins_with("--pitch="):
+			_pitch = a.trim_prefix("--pitch=")
+		elif a == "--night":
+			_night = true
 	return out if not out.is_empty() else [0.30, 0.50]
 
 func _init() -> void:

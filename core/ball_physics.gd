@@ -20,12 +20,22 @@ const FIELD_FRICTION := 0.34
 const ROLL_DECEL := 2.3
 const REST_SPEED := 0.25
 
+# What the pitch and the conditions do; Conditions.apply sets these. Defaults are a good pitch.
+static var pitch_restitution := PITCH_RESTITUTION
+static var pitch_friction := PITCH_FRICTION
+static var pitch_grip := PITCH_GRIP
+static var seam_scale := 1.0      # how much the seam moves it off the pitch
+static var swing_scale := 1.0     # how much it swings in the air
+static var roll_decel := ROLL_DECEL
+
 class State:
 	extends RefCounted
 	var pos := Vector3.ZERO
 	var vel := Vector3.ZERO
 	var spin := Vector3.ZERO     # angular velocity, rad/s
 	var swing := 0.0             # -1..1, positive moves the ball toward +X
+	var seam := 0.0              # sideways kick off the pitch when it lands on the seam, m/s (+ toward +X)
+	var bounce_var := 0.0        # this ball's bounce off the pitch, as a fraction more or less than normal
 	var time := 0.0
 	var bounces := 0
 	var rolling := false
@@ -38,6 +48,8 @@ class State:
 		s.vel = vel
 		s.spin = spin
 		s.swing = swing
+		s.seam = seam
+		s.bounce_var = bounce_var
 		s.time = time
 		s.bounces = bounces
 		s.rolling = rolling
@@ -60,7 +72,7 @@ static func step(s: State, dt: float = DT) -> void:
 		var h := Vector3(s.vel.x, 0.0, s.vel.z)
 		if h.length_squared() > 0.0001:
 			h = h.normalized()
-			acc += Vector3(h.z, 0.0, -h.x) * (SWING_K * s.swing * speed * speed)
+			acc += Vector3(h.z, 0.0, -h.x) * (SWING_K * swing_scale * s.swing * speed * speed)
 	s.vel += acc * dt
 	var prev := s.pos
 	s.pos += s.vel * dt
@@ -72,8 +84,11 @@ static func step(s: State, dt: float = DT) -> void:
 
 static func _bounce(s: State) -> void:
 	var on_pitch := Pitch.on_pitch(s.pos)
-	var e := PITCH_RESTITUTION if on_pitch else FIELD_RESTITUTION
-	var mu := PITCH_FRICTION if on_pitch else FIELD_FRICTION
+	var first_on_pitch := on_pitch and s.bounces == 0
+	var e := pitch_restitution if on_pitch else FIELD_RESTITUTION
+	if first_on_pitch:
+		e *= clampf(1.0 + s.bounce_var, 0.6, 1.35)
+	var mu := pitch_friction if on_pitch else FIELD_FRICTION
 	var vn := -s.vel.y
 	s.pos.y = RADIUS
 	s.last_bounce = Vector3(s.pos.x, 0.0, s.pos.z)
@@ -87,12 +102,15 @@ static func _bounce(s: State) -> void:
 	var slip_s := slip.dot(side)
 	# Across the line of flight the seam grips, so side spin becomes turn.
 	# Along it the ball skids, limited by sliding friction.
-	var grip := PITCH_GRIP if on_pitch else FIELD_GRIP
+	var grip := pitch_grip if on_pitch else FIELD_GRIP
 	var j := side * (-slip_s * (2.0 / 7.0) * grip) \
 		+ fwd * (-signf(slip_f) * minf(mu * (1.0 + e) * vn, absf(slip_f) * 2.0 / 7.0))
 	s.vel.x += j.x
 	s.vel.z += j.z
 	s.spin += Vector3(-j.z, 0.0, j.x) * (2.5 / RADIUS)
+	if first_on_pitch and s.seam != 0.0:
+		# Landed on the seam: it darts one way or the other.
+		s.vel.x += s.seam * seam_scale
 	s.vel.y = vn * e
 	if s.vel.y < 0.7:
 		s.vel.y = 0.0
@@ -101,7 +119,7 @@ static func _bounce(s: State) -> void:
 static func _roll(s: State, dt: float) -> void:
 	var h := Vector3(s.vel.x, 0.0, s.vel.z)
 	var speed := h.length()
-	var new_speed := speed - (ROLL_DECEL + DRAG_K * speed * speed) * dt
+	var new_speed := speed - (roll_decel + DRAG_K * speed * speed) * dt
 	if new_speed <= REST_SPEED:
 		s.vel = Vector3.ZERO
 		s.at_rest = true

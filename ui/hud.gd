@@ -413,8 +413,8 @@ func set_score(runs: int, wickets: int, ball: int, total: int) -> void:
 ## Match: everything on the scoreboard comes straight from the match state.
 func set_match(m: MatchState) -> void:
 	_top.match_mode = true
-	_top.title = "BLUE"
-	_top.title_b = "RED %d/%d" % [m.red_total, m.red_wickets]
+	_top.title = m.blue_name
+	_top.title_b = "%s %d/%d" % [m.red_name, m.red_total, m.red_wickets]
 	_top.score = "%d/%d" % [m.runs, m.wickets]
 	_top.right_label = "OVERS"
 	_top.right_big = m.overs_text()
@@ -432,8 +432,10 @@ func set_match(m: MatchState) -> void:
 	_top.timing = BatterSkill.pips(sk.timing)
 	var bi := m.bowler_index()
 	var b: Dictionary = m.bowling[bi]
-	_top.bowler = str(MatchState.BOWLERS[bi][0])
-	_top.bowler_style = str({"swing": "SWING", "pace": "PACE", "off": "OFF SPIN", "leg": "LEG SPIN"}.get(m.bowler_style(), ""))
+	_top.bowler = m.bowler_name()
+	var prof := m.bowler_profile()
+	_top.bowler_style = ("LEFT-ARM " if str(prof.arm) == "L" else "") + str({"express": "EXPRESS", "sling": "SLINGER", "tall": "FAST",
+		"skiddy": "MEDIUM", "finger": "SPIN", "wrist": "WRIST SPIN"}.get(str(prof.action), ""))
 	_top.figures = "%d-%d" % [b.wkts, b.runs]
 	_top.figures_overs = "(%s)" % m.overs_text(b.balls)
 	_top.over = m.this_over.duplicate()

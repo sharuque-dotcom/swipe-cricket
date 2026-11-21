@@ -46,6 +46,15 @@ Swipe to play a shot. Lift your finger just before the ball arrives.
 - Between balls: the openers walk out, the fielders mob the bowler after a wicket while the
   batter walks off and the next one walks in, fifties and hundreds get the bat raised, and the
   winning runs get a celebration. Tap to skip any of it.
+- Every match has a pitch and a time of day. A green seamer gives the quicks swing and seam
+  movement; a flat road is true and fast with a quick outfield (and Red post a bigger total);
+  a dusty turner grips and turns and keeps low as it wears. Under lights the dew comes in
+  during the chase: the ball skids on and the spinners lose their grip.
+- Red's bowlers each have their own action and their own stock ball: a left-arm express
+  quick angling it across you, a slinger with a short run and a late, low release, a tall
+  bowler who gets steep bounce, a cutter bowler who skids on, an off-spinner who darts it, a
+  leg-spinner with drift, dip, googly and flipper, and a left-arm orthodox spinner. The
+  release point and the spin go into the physics, so each one plays differently.
 - Read the field. Each over the bowler has a plan (short, wide of off, or full and straight)
   and the field is set for it, so where the fielders are tells you what is coming.
 - The captain reacts to the game: a slip and catchers in for a new batter, the field spread
@@ -57,7 +66,8 @@ Swipe to play a shot. Lift your finger just before the ball arrives.
   across, and a slow-motion replay runs from stump height. Tap to skip any of it.
 - Fielders dive for catches and stops at full stretch and slide to save the ball at the rope.
 
-`tests/pose_viewer.gd` renders every batting animation to images for checking.
+`tests/pose_viewer.gd` and `tests/bowler_viewer.gd` render every batting and bowling animation
+to images for checking.
 `godot --headless -s tests/balance_sim.gd` plays whole innings with simulated players and prints
 what each style of batting scores; use it when changing `core/tuning.gd` or `core/fielding.gd`.
 

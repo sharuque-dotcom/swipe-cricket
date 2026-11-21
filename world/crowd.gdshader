@@ -4,6 +4,7 @@ render_mode cull_disabled;
 // a few flags, shade under the roof, and stairways. `excite` makes them jump.
 // Colours match the stadium photo at the bowler's end (mostly blue and yellow).
 uniform float excite = 0.0;
+uniform float lit = 1.0;   // under lights the stands sit in the dark above the floodlit field
 uniform float columns = 3800.0;
 uniform float rows = 72.0;
 uniform float roof_shade = 0.38;   // rows nearer the top than this sit in the roof's shadow
@@ -55,7 +56,7 @@ void fragment() {
 	// Softer colours: at a distance a crowd reads as speckle, not stripes.
 	float lum = dot(col, vec3(0.299, 0.587, 0.114));
 	col = mix(vec3(lum), col, 0.7);
-	ALBEDO = col * col * 1.3;
+	ALBEDO = col * col * 1.3 * lit;
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.0;
 }
