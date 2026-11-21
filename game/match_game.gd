@@ -115,6 +115,7 @@ func _new_session() -> void:
 	phase = Phase.INTRO
 	hit_view_cap = 6.0
 	stadium.set_conditions(match_state.pitch, match_state.night)
+	set_ball_colour(true)
 	_field_over = -1
 	_scenes.clear()
 	_scene = {}

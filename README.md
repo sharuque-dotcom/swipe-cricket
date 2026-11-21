@@ -69,6 +69,8 @@ their attack), the season, your career numbers (runs, average, strike rate, high
   movement; a flat road is true and fast with a quick outfield (and Red post a bigger total);
   a dusty turner grips and turns and keeps low as it wears. Under lights the dew comes in
   during the chase: the ball skids on and the spinners lose their grip.
+- Matches use a white ball and a black sight screen, as in real T20 cricket; the nets keep the
+  red ball.
 - Red's bowlers each have their own action and their own stock ball: a left-arm express
   quick angling it across you, a slinger with a short run and a late, low release, a tall
   bowler who gets steep bounce, a cutter bowler who skids on, an off-spinner who darts it, a

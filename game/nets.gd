@@ -121,7 +121,7 @@ func _ready() -> void:
 	sm.radial_segments = 16
 	sm.rings = 8
 	ball_node.mesh = sm
-	ball_node.material_override = Figure.mat(Color(0.78, 0.06, 0.08), 0.3)
+	set_ball_colour(false)
 	ball_node.visible = false
 	add_child(ball_node)
 	blob = _disc(0.09, Color(0, 0, 0, 0.38))
@@ -159,6 +159,18 @@ func _ready() -> void:
 	swipe.swipe_started.connect(_on_swipe_started)
 	swipe.swipe_moved.connect(hud.trail_points)
 	_new_session()
+
+## A match is played with a white ball (and a black sight screen); the nets with a red one.
+func set_ball_colour(white: bool) -> void:
+	var m := Figure.mat(Color(0.97, 0.97, 0.94) if white else Color(0.78, 0.06, 0.08), 0.3)
+	if white:
+		# A touch of glow so it reads against the crowd and the pitch, day or night.
+		m.emission_enabled = true
+		m.emission = Color(1, 1, 1)
+		m.emission_energy_multiplier = 0.35
+	ball_node.material_override = m
+	if stadium != null:
+		stadium.set_white_ball(white)
 
 func _disc(radius: float, c: Color, hole: float = 0.0) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()

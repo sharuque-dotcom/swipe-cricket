@@ -10,6 +10,7 @@ var _sun: DirectionalLight3D
 var _pitch_mat: ShaderMaterial
 var _backdrop_mat: ShaderMaterial
 var _lights: Array[Node3D] = []
+var sight_screen: MeshInstance3D
 
 func build() -> void:
 	_sky()
@@ -167,8 +168,8 @@ func _ring() -> void:
 	_band(93.0, 29.0, 104.0, 27.5, _flat(Color(0.34, 0.38, 0.46)))
 	_band(99.0, 0.0, 99.0, 28.0, _flat(Color(0.22, 0.25, 0.33)))
 	_backdrop()
-	# Sight screen behind the bowler.
-	_box(Vector3(14, 7, 0.4), Vector3(0, 3.5, Pitch.FIELD_CENTRE.z - 67.5), Color(0.95, 0.95, 0.95), 1.0)
+	# Sight screen behind the bowler: white for a red ball, black for a white one.
+	sight_screen = _box(Vector3(14, 7, 0.4), Vector3(0, 3.5, Pitch.FIELD_CENTRE.z - 67.5), Color(0.95, 0.95, 0.95), 1.0)
 
 ## Size and place of the stadium photo: a card standing just behind the far boards.
 ## Sized for the batting camera: it fills the view with roof, floodlights and two packed
@@ -205,15 +206,15 @@ func set_conditions(pitch: String, night: bool) -> void:
 		_sky_mat.sky_top_color = Color(0.015, 0.025, 0.07)
 		_sky_mat.sky_horizon_color = Color(0.10, 0.12, 0.20)
 		_sky_mat.ground_horizon_color = Color(0.10, 0.12, 0.16)
-		_env.ambient_light_color = Color(0.52, 0.58, 0.78)
-		_env.ambient_light_energy = 0.5
+		_env.ambient_light_color = Color(0.62, 0.68, 0.85)
+		_env.ambient_light_energy = 0.75
 		_env.fog_light_color = Color(0.10, 0.12, 0.18)
 		_sun.rotation_degrees = Vector3(-72.0, 14.0, 0.0)
 		_sun.light_color = Color(0.94, 0.97, 1.0)
-		_sun.light_energy = 0.95
-		_backdrop_mat.set_shader_parameter("tint", Color(0.30, 0.33, 0.46))
-		crowd_material.set_shader_parameter("lit", 0.42)
-		_env.tonemap_exposure = 1.12
+		_sun.light_energy = 1.05
+		_backdrop_mat.set_shader_parameter("tint", Color(0.48, 0.52, 0.66))
+		crowd_material.set_shader_parameter("lit", 0.62)
+		_env.tonemap_exposure = 1.18
 	else:
 		_sky_mat.sky_top_color = Color(0.42, 0.62, 0.90)
 		_sky_mat.sky_horizon_color = Color(0.82, 0.87, 0.91)
@@ -280,3 +281,8 @@ func _build_floodlights() -> void:
 		head.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.visible = false
 		_lights.append(root)
+
+
+## White-ball cricket (a match) has a black sight screen; the red ball (nets) a white one.
+func set_white_ball(white: bool) -> void:
+	sight_screen.material_override = Figure.mat(Color(0.06, 0.07, 0.10) if white else Color(0.95, 0.95, 0.95), 1.0)
