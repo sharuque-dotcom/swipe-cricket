@@ -262,6 +262,8 @@ func _next_ball() -> void:
 		if not before.has(sp.name):
 			moved.append(sp.name)
 	_start_delivery(d)
+	# The non-striker stands on the other side of the stumps from the bowler's run-up.
+	non_striker.position.x = 1.25 if d.release.x < 0.0 else -1.25
 	var mood := Captain.mood(match_state)
 	var mood_changed := mood != _mood and not before.is_empty()
 	_mood = mood

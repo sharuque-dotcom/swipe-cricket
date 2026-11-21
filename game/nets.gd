@@ -7,8 +7,10 @@ const BALLS := 12
 const BALL_VISUAL_SCALE := 1.55
 const BALL_MIN_ANGLE := 0.0065   # never let the ball shrink below this angular size
 const TRAIL := 16
-const CAM_HOME := Vector3(0.0, 2.25, 4.9)
-const CAM_LOOK := Vector3(0.0, 1.05, -9.0)
+# Behind the batter, a little to the off side and up, so the batter doesn't hide the line of
+# the ball or where it pitches (whichever side of the wicket the bowler comes from).
+const CAM_HOME := Vector3(0.8, 2.8, 5.4)
+const CAM_LOOK := Vector3(0.25, 0.6, -9.0)
 const CAM_FOV := 44.0
 
 var state := State.READY
