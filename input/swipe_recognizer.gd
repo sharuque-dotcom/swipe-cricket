@@ -38,6 +38,8 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _blocked(at: Vector2) -> bool:
 	for c in blockers:
+		if not is_instance_valid(c):
+			continue
 		if c.is_visible_in_tree() and c.get_global_rect().has_point(at):
 			return true
 	return false

@@ -49,7 +49,11 @@ func _ready() -> void:
 	var saved := _saved_summary()
 	if saved != "":
 		col.add_child(_button("RESUME MATCH", saved, Hud.GREEN, func(): _go("match")))
+	var car := Career.load_saved()
+	col.add_child(_button("CAREER", ("%s  ·  %s  ·  season %d" % [car.name, car.tier_info().name.capitalize(), car.season]) if car != null
+		else "Club cricket to international", Hud.GREEN.darkened(0.1), func(): _go("career")))
 	col.add_child(_button("NEW MATCH", "Chase Red's total in 20 overs", Hud.BLUE, func():
+		Career.active = false
 		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://match.json"))
 		_go("match")))
 	col.add_child(_button("NETS", "12 balls to find your timing", Hud.GOLD, func(): _go("nets")))
@@ -105,7 +109,8 @@ func _saved_summary() -> String:
 	return "BLUE %d/%d  ·  %s ov  ·  need %d" % [m.runs, m.wickets, m.overs_text(), m.need()]
 
 func _go(which: String) -> void:
-	get_tree().call_deferred("change_scene_to_file", "res://game/match.tscn" if which == "match" else "res://game/nets.tscn")
+	var path: String = {"match": "res://game/match.tscn", "career": "res://game/career.tscn"}.get(which, "res://game/nets.tscn")
+	get_tree().call_deferred("change_scene_to_file", path)
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_GO_BACK_REQUEST:

@@ -24,6 +24,22 @@ Swipe to play a shot. Lift your finger just before the ball arrives.
 - Speed of the swipe is power.
 - A long swipe lofts the ball; a short one keeps it on the ground.
 
+## Career
+
+Make a batter (name and role: opener, top order, middle order or finisher) and start in club
+cricket. Each season is a set of chases; win enough of them, or average 35, and you move up:
+club, state, franchise, international. Bowlers get quicker and totals bigger as you go.
+
+You play your own innings. Team-mates who bat before you are played out at once and a card
+tells you how they got on; while you are at the non-striker's end your partner's balls are
+shown as a quick read-out. When you are out you choose: play the rest of the innings yourself,
+or simulate to the end.
+
+Your ratings grow from how you bat: timing from how often you middle it, power from how far
+you hit it. The career page shows your ratings, the next match (opponent, pitch, day or night,
+their attack), the season, your career numbers (runs, average, strike rate, highest, 50s and
+100s, 4s and 6s), how often you time it in the green, and your recent innings.
+
 ## How a match plays
 
 - Timing decides everything. The green zone of the timing meter is the sweet spot; the further

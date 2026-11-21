@@ -71,6 +71,11 @@ var _tap_label: Label
 ## The auto-bowl switch, bottom right in a match. Emits `auto_bowl_toggled`.
 var auto_toggle: Button
 signal auto_bowl_toggled(on: bool)
+## A card with buttons: the game waits for one. Emits `choice_made(index)`.
+signal choice_made(index: int)
+var _choice: PanelContainer
+var _choice_col: VBoxContainer
+var choice_buttons: Array[Control] = []
 var _banner: PanelContainer
 var _banner_bar: ColorRect
 var _banner_title: Label
@@ -508,6 +513,91 @@ func hide_field_card() -> void:
 	_field_card.visible = false
 	_radar.visible = true
 
+## Ask the player to pick one of `options`. The buttons block swipes while they are up.
+func show_choice(kicker: String, title: String, sub: String, options: Array, rows: Array = []) -> void:
+	if _choice == null:
+		_choice = PanelContainer.new()
+		var sb := card_box(34, 0.97, Color(GOLD.r, GOLD.g, GOLD.b, 0.55))
+		sb.shadow_size = 30
+		sb.content_margin_left = 36
+		sb.content_margin_right = 36
+		sb.content_margin_top = 28
+		sb.content_margin_bottom = 32
+		_choice.add_theme_stylebox_override("panel", sb)
+		_choice.anchor_left = 0.5
+		_choice.anchor_right = 0.5
+		_choice.anchor_top = 0.5
+		_choice.anchor_bottom = 0.5
+		_choice.grow_horizontal = Control.GROW_DIRECTION_BOTH
+		_choice.grow_vertical = Control.GROW_DIRECTION_BOTH
+		_choice.custom_minimum_size = Vector2(620, 0)
+		_choice_col = VBoxContainer.new()
+		_choice_col.add_theme_constant_override("separation", 10)
+		_choice.add_child(_choice_col)
+		_root.add_child(_choice)
+	for c in _choice_col.get_children():
+		_choice_col.remove_child(c)
+		c.queue_free()
+	choice_buttons.clear()
+	var k := _text(kicker, "semi", 24, GOLD)
+	k.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_choice_col.add_child(k)
+	var t := _text(title, "bold", 64, TEXT)
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_choice_col.add_child(t)
+	if sub != "":
+		var s := _text(sub, "semi", 28, DIM)
+		s.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_choice_col.add_child(s)
+	for r: Array in rows:
+		_choice_col.add_child(_row(str(r[0]), str(r[1]), r[2] if r.size() > 2 else Color(0, 0, 0, 0)))
+	_choice_col.add_child(_gap(12))
+	for i in options.size():
+		var b := Button.new()
+		b.text = str(options[i]).to_upper()
+		b.focus_mode = Control.FOCUS_NONE
+		b.custom_minimum_size = Vector2(0, 84)
+		b.add_theme_font_override("font", font("bold"))
+		b.add_theme_font_size_override("font_size", 32)
+		var primary := i == 0
+		for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+			var bsb := pill_box(GOLD if primary else Color(1, 1, 1, 0.08), 22)
+			if st == "pressed" or st == "hover_pressed":
+				bsb.bg_color = bsb.bg_color.lightened(0.15)
+			if not primary:
+				bsb.border_color = Color(1, 1, 1, 0.25)
+				bsb.set_border_width_all(2)
+			b.add_theme_stylebox_override(st, bsb)
+		for c in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
+			b.add_theme_color_override(c, NAVY if primary else TEXT)
+		var idx := i
+		b.pressed.connect(func():
+			hide_choice()
+			choice_made.emit(idx))
+		_choice_col.add_child(b)
+		choice_buttons.append(b)
+	clear_result()
+	_scrim.visible = true
+	_choice.visible = true
+	_center(_choice)
+
+## Size a centre-anchored panel to its contents and put it in the middle of the screen.
+func _center(c: Control) -> void:
+	var s := c.get_combined_minimum_size()
+	c.offset_left = -s.x * 0.5
+	c.offset_right = s.x * 0.5
+	c.offset_top = -s.y * 0.5
+	c.offset_bottom = s.y * 0.5
+	c.size = s
+
+func hide_choice() -> void:
+	if _choice != null:
+		_choice.visible = false
+	_scrim.visible = _card.visible
+
+func choice_visible() -> bool:
+	return _choice != null and _choice.visible
+
 func show_tap_prompt(on: bool, auto: bool = false) -> void:
 	_tap.visible = on
 	_tap_label.text = "AUTO BOWL  ·  TAP TO GO NOW" if auto else "TAP TO BOWL"
@@ -603,7 +693,7 @@ func show_card(d: Dictionary) -> void:
 	clear_result()
 	_scrim.visible = true
 	_card.visible = true
-	_card.reset_size()
+	_center(_card)
 	_card.pivot_offset = _card.size * 0.5
 	_card.scale = Vector2(0.92, 0.92)
 	_card.modulate.a = 0.0

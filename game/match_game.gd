@@ -59,6 +59,12 @@ var _replay_swung := false
 var _replay_catch_cam := Vector3.ZERO
 var _bowled_at := 0.0
 var _stumping := false        # the keeper's throw is going at the stumps
+# Career: team-mates' balls are simulated; you get asked what to do when you're out.
+var _sim_rng := RandomNumberGenerator.new()
+var _asked := false           # already asked "play the rest or simulate?"
+var _waiting_choice := false
+var _choice_t := 0.0
+var _career_report := {}
 var _stumps_broken := false
 
 func _new_session() -> void:
@@ -69,6 +75,19 @@ func _new_session() -> void:
 	if not resumed:
 		var sd := int(Time.get_unix_time_from_system()) if not autoplay else 21
 		var opts := {}
+		if "--career" in OS.get_cmdline_user_args():
+			Career.active = true
+			if Career.load_saved() == null:
+				var c := Career.create("Test Player", "Top order")
+				c.next_seed = 5
+				c.save()
+		if Career.active:
+			var car := Career.load_saved()
+			if car == null:
+				Career.active = false
+			else:
+				opts = car.match_opts()
+				sd = car.next_seed
 		# Test hooks: --pitch=dusty, --night, --day force the conditions.
 		for a in OS.get_cmdline_user_args():
 			if a.begins_with("--pitch="):
@@ -84,6 +103,9 @@ func _new_session() -> void:
 		match_state.machine_state = machine.state
 	else:
 		machine.state = match_state.machine_state
+	Career.active = not match_state.career.is_empty()
+	_asked = match_state.player_out() and str(match_state.career.get("mode", "own")) == "team"
+	_waiting_choice = false
 	_fresh = not resumed
 	runs = match_state.runs
 	wickets = match_state.wickets
@@ -115,6 +137,16 @@ func _new_session() -> void:
 			"rows": [["Need", "%d off %d balls" % [m.need(), m.balls_left()]], ["Required rate", "%.1f" % m.required_rate()],
 				["On strike", m.striker_name()]],
 			"prompt": "Tap to carry on"})
+	elif Career.active:
+		var c: Dictionary = m.career
+		hud.show_card({"kicker": "%s  ·  MATCH %d OF %d  ·  v %s" % [Career.TIERS[int(c.tier)].name, int(c.match), int(c.of), m.red_name],
+			"title": "CHASE %d" % m.target, "sub": "off 120 balls",
+			"rows": [["%s made" % m.red_name, "%d/%d" % [m.red_total, m.red_wickets], Hud.RED],
+				["Pitch", str(Conditions.info(m.pitch).name).capitalize(), Hud.GOLD],
+				["Played", "Under lights" if m.night else "In the day"],
+				["You bat", "No. %d  ·  %s" % [int(c.pos) + 1, str(c.role)], Hud.BLUE]],
+			"notes": ["You play your own innings; your team-mates' balls are played out for you."],
+			"prompt": "Tap to start"})
 	else:
 		hud.show_card({"kicker": "20-OVER MATCH  ·  SECOND INNINGS", "title": "CHASE %d" % m.target, "sub": "off 120 balls",
 			"rows": [["%s made" % m.red_name, "%d/%d" % [m.red_total, m.red_wickets], Hud.RED], ["Their top score", m.red_top],
@@ -156,6 +188,7 @@ func _build_fielders() -> void:
 			hud.show_tap_prompt(not hud._field_card.visible, on)
 			_ready_t = 0.0)
 	swipe.blockers.append(hud.auto_toggle)
+	hud.choice_made.connect(_on_choice)
 
 ## Spinners get a keeper up at the stumps and a long-on instead of a slip.
 func _set_field() -> void:
@@ -196,7 +229,11 @@ func _next_ball() -> void:
 	if match_state.finished():
 		_show_result()
 		return
+	if not match_state.players_ball():
+		_career_sim()
+		return
 	phase = Phase.PLAY
+	_sim_ticker = false
 	hud.hide_card()
 	hud.radar_clear()
 	_taker = null
@@ -570,13 +607,18 @@ func _surname(n: String) -> String:
 	var parts := n.split(" ")
 	return parts[parts.size() - 1]
 
-func _record(scored: int, how_out: String) -> void:
+## `quiet`: a simulated ball played out off screen (no cutscenes, no notices).
+func _record(scored: int, how_out: String, quiet: bool = false) -> void:
 	_dead_for = 0.0
 	var before_over := match_state.over_index()
 	var hitter := match_state.striker
 	var had: int = match_state.batters[hitter].runs
 	var out_line := match_state.batter_line(hitter)
 	var ev := match_state.record(scored, how_out)
+	if quiet:
+		runs = match_state.runs
+		wickets = match_state.wickets
+		return
 	_queue_scenes(ev, hitter, had, how_out, out_line)
 	if autoplay:
 		print("%s  %d/%d  %s" % [match_state.overs_text(), match_state.runs, match_state.wickets, how_out if how_out != "" else str(scored)])
@@ -637,7 +679,7 @@ func _start_scene(sc: Dictionary) -> void:
 			walker_out.walk(Vector3(-10.5, 0, 5.0), Vector3(-1.2, 0, -0.6), 3.4)
 			walker_in.walk(Vector3(-11.2, 0, 4.0), Vector3(-1.9, 0, -1.6), 3.4)
 			walker_out.glum = false
-			hud.show_banner("BLUE OPENERS", "%s  &  %s  ·  chasing %d" % [m.batters[0].name, m.batters[1].name, m.target], Hud.BLUE)
+			hud.show_banner("%s OPENERS" % m.blue_name, "%s  &  %s  ·  chasing %d" % [m.batters[0].name, m.batters[1].name, m.target], Hud.BLUE)
 		"wicket":
 			batter.visible = false
 			_shirt(walker_out.figure, str(m.batters[sc.out].name))
@@ -659,12 +701,12 @@ func _start_scene(sc: Dictionary) -> void:
 			batter.celebrate("win")
 			stadium.crowd_material.set_shader_parameter("excite", 1.0)
 			sfx.play("cheer")
-			hud.show_banner("BLUE WIN", m.result_text().substr(m.result_text().find(" by ") + 1).capitalize(), Hud.BLUE)
+			hud.show_banner("%s WIN" % m.blue_name, m.result_text().substr(m.result_text().find(" by ") + 1).capitalize(), Hud.BLUE)
 		"red_win":
 			_huddle()
 			sfx.play("groan")
 			var tied := m.runs == m.target - 1
-			hud.show_banner("TIED" if tied else "RED WIN", "" if tied else m.result_text().substr(m.result_text().find(" by ") + 1), Hud.RED)
+			hud.show_banner("TIED" if tied else "%s WIN" % m.red_name, "" if tied else m.result_text().substr(m.result_text().find(" by ") + 1), Hud.RED)
 
 ## Fielders within reach run in to the bowler and jump; the rest celebrate where they are.
 func _huddle() -> void:
@@ -696,7 +738,7 @@ func _run_scene(delta: float) -> void:
 		walker_out.walk(Vector3(-0.4, 0, -0.9), Vector3(-9.5, 0, 3.6), 2.8, 0.0, true)
 		walker_in.walk(Vector3(-10.5, 0, 1.8), Vector3(-1.2, 0, -0.8), 2.8, 0.0)
 		var m := match_state
-		var sk := MatchState.skill_of(_scene.in)
+		var sk := match_state.skill_for(_scene.in)
 		hud.show_banner("IN: %s" % m.batters[_scene.in].name, "%s  ·  POWER %d/5  ·  TIMING %d/5" % [
 			sk.role.to_upper(), BatterSkill.pips(sk.power), BatterSkill.pips(sk.timing)], Hud.BLUE)
 	if t >= float(_scene.dur):
@@ -755,6 +797,124 @@ func _scene_camera() -> void:
 	cam.position = from
 	cam.look_at(look)
 
+var _sim_ticker := false      # a team-mate's ball is on the scoreboard
+
+## Career: a ball that isn't yours. Before you come in, the innings is played out at once up
+## to your arrival; while you're at the other end, each of your partner's balls is shown as a
+## quick read-out; once you're out, you choose whether to play on or let it be played out.
+func _career_sim() -> void:
+	var m := match_state
+	_sim_rng.seed = m.seed_value * 131 + m.balls
+	var pos := int(m.career.pos)
+	if m.player_out():
+		if not _asked:
+			_asked = true
+			_ask_after_out()
+			return
+		# Chose to have it played out: to the end, at once.
+		while not m.finished():
+			_sim_one(true)
+		_save()
+		_next_ball()
+		return
+	var at_crease := m.striker == pos or m.non_striker == pos
+	if not at_crease:
+		_fast_forward_to_player()
+		return
+	# Your partner's ball.
+	var who := _surname(m.striker_name())
+	var res := _sim_one(false)
+	_sim_ticker = true
+	state = State.DEAD
+	phase = Phase.PLAY
+	timer = 1.0 if str(res[1]) == "" else 1.6
+	hud.hide_card()
+	hud.clear_result()
+	var what: String = ("OUT  ·  %s" % res[1]) if str(res[1]) != "" else {0: "dot ball", 1: "1 run", 2: "2 runs", 3: "3 runs", 4: "FOUR", 6: "SIX"}.get(int(res[0]), "")
+	hud.set_delivery("%s  ·  %s" % [who.to_upper(), what])
+	if autoplay:
+		print("partner ball at frame %d: %s" % [_shot_index, what])
+	if str(res[1]) != "":
+		hud.show_big("OUT", Hud.RED)
+	elif int(res[0]) >= 4:
+		hud.show_big("FOUR" if int(res[0]) == 4 else "SIX", Hud.BLUE if int(res[0]) == 4 else Hud.GOLD)
+		sfx.play("cheer", -6.0)
+
+## Plays one simulated ball. Returns [runs, how_out].
+func _sim_one(quiet: bool) -> Array:
+	var r := BallSim.ball(match_state, _sim_rng)
+	_record(int(r[0]), str(r[1]), quiet)
+	return r
+
+## Your team-mates bat until you are in; then a card says how they got on.
+func _fast_forward_to_player() -> void:
+	var m := match_state
+	var pos := int(m.career.pos)
+	var start_runs := m.runs
+	var start_balls := m.balls
+	var last_out := -1
+	var last_how := ""
+	while not m.finished() and m.striker != pos and m.non_striker != pos:
+		var out_i := m.striker
+		var line := m.batter_line(out_i)
+		var r := _sim_one(true)
+		if str(r[1]) != "":
+			last_out = out_i
+			last_how = "%s  ·  %s" % [line, r[1]]
+	_save()
+	_refresh_hud()
+	if autoplay:
+		print("fast-forward to %d/%d at frame %d" % [m.runs, m.wickets, _shot_index])
+	var rows := []
+	for i in pos:
+		var b: Dictionary = m.batters[i]
+		if int(b.balls) > 0 or str(b.out) != "":
+			rows.append([str(b.name), "%d (%d)%s" % [b.runs, b.balls, "" if str(b.out) != "" else "*"]])
+	if m.finished():
+		_next_ball()
+		return
+	if last_out >= 0:
+		_scenes.append({"kind": "wicket", "out": last_out, "how": last_how.split("  ·  ")[1], "line": last_how.split("  ·  ")[0], "in": pos})
+	state = State.SUMMARY
+	phase = Phase.INTRO
+	timer = 0.0
+	hud.show_card({"kicker": "WHILE YOU WAITED", "title": "%d/%d" % [m.runs, m.wickets],
+		"sub": "%d off %d balls  ·  need %d off %d" % [m.runs - start_runs, m.balls - start_balls, m.need(), m.balls_left()],
+		"rows": rows.slice(maxi(0, rows.size() - 4)), "prompt": "You're in. Tap to walk out"})
+
+func _ask_after_out() -> void:
+	var m := match_state
+	if autoplay:
+		print("asked after out at frame %d" % _shot_index)
+	var b: Dictionary = m.batters[int(m.career.pos)]
+	state = State.SUMMARY
+	phase = Phase.PLAY
+	_waiting_choice = true
+	_choice_t = 0.0
+	hud.show_choice("YOU'RE OUT", "%d (%d)" % [b.runs, b.balls], "%s\n%s need %d off %d with %d wickets left" % [str(b.out),
+		m.blue_name, m.need(), m.balls_left(), MatchState.MAX_WICKETS - m.wickets],
+		["Play the rest of the innings", "Simulate to the end"])
+	swipe.blockers.append_array(hud.choice_buttons)
+
+func _on_choice(i: int) -> void:
+	_waiting_choice = false
+	if i == 0:
+		match_state.career["mode"] = "team"
+	_save()
+	state = State.DEAD
+	timer = 0.05
+
+## Counts how your own swings went, for your career's timing numbers.
+func _swing(angle: float, power: float, loft: float, contact_time: float) -> void:
+	super._swing(angle, power, loft, contact_time)
+	if _replaying or not match_state.player_on_strike():
+		return
+	var key := "miss"
+	if pending.outcome != ShotResolver.Outcome.MISS:
+		var l := pending.timing_label()
+		key = "perfect" if l == "PERFECT" else ("early" if l.contains("EARLY") else "late")
+	match_state.timing[key] = int(match_state.timing[key]) + 1
+
 func _style_name(s: String) -> String:
 	return {"swing": "swing", "pace": "pace", "off": "off spin", "leg": "leg spin"}.get(s, s)
 
@@ -771,6 +931,9 @@ func _show_result() -> void:
 	var tied := m.runs == m.target - 1
 	var text := m.result_text()
 	var by := text.find(" by ")
+	if Career.active:
+		_career_result(won, tied, text, by)
+		return
 	hud.show_card({"kicker": "MATCH RESULT", "title": "YOU WIN!" if won else ("TIED!" if tied else "RED WIN"),
 		"sub": "" if tied else ("Blue win" + text.substr(by) if won else text.substr(by + 1)),
 		"accent": Hud.GOLD if won else (Hud.TEXT if tied else Hud.RED),
@@ -778,6 +941,38 @@ func _show_result() -> void:
 			["RED", "%d/%d  (20 ov)" % [m.red_total, m.red_wickets], Hud.RED],
 			["Top scorer", m.top_blue()], ["Best bowler", m.best_bowler()]],
 		"prompt": "Tap for a new match"})
+
+## The end of a career match: it goes into the career, and the card says what it did for you.
+func _career_result(won: bool, tied: bool, text: String, by: int) -> void:
+	var m := match_state
+	if autoplay:
+		print("career result at frame %d: %s" % [_shot_index, m.result_text()])
+	var car := Career.load_saved()
+	var rep := {}
+	if car != null:
+		rep = car.record_match(m)
+		car.save()
+	var c: Dictionary = m.career
+	var b: Dictionary = m.batters[int(c.pos)]
+	var innings := "did not bat" if not rep.get("batted", true) else "%d%s (%d)" % [b.runs, "" if str(b.out) != "" else "*", b.balls]
+	var rows := [["Your innings", innings, Hud.BLUE]]
+	if str(b.out) != "":
+		rows.append(["How out", str(b.out)])
+	if rep.has("timing_after"):
+		rows.append(["Timing", "%d  →  %d" % [rep.timing_before, rep.timing_after], Hud.GREEN])
+		rows.append(["Power", "%d  →  %d" % [rep.power_before, rep.power_after], Hud.GOLD])
+	var notes := []
+	if rep.get("season_over", false):
+		notes.append(str(rep.get("season_line", "")))
+		notes.append("PROMOTED to %s!" % Career.TIERS[car.tier].name if rep.get("promoted", false) else "Season over. Go again.")
+	elif car != null:
+		notes.append("Season %d  ·  %s  ·  %d of %d played  ·  %d won" % [car.season, Career.TIERS[car.tier].name,
+			car.match_no, car.matches_in_season(), car.season_wins])
+	hud.show_card({"kicker": "%s  v  %s" % [m.blue_name, m.red_name],
+		"title": "WON" if won else ("TIED" if tied else "LOST"),
+		"sub": "" if tied else text.substr(by + 1),
+		"accent": Hud.GOLD if won else (Hud.TEXT if tied else Hud.RED),
+		"rows": rows, "notes": notes, "prompt": "Tap for your career"})
 
 func _on_swipe_started() -> void:
 	hud.trail_begin()
@@ -789,12 +984,20 @@ func _on_swipe_started() -> void:
 			return
 		Phase.RESULT:
 			if timer > 1.2:
+				if Career.active:
+					get_tree().call_deferred("change_scene_to_file", "res://game/career.tscn")
+					return
 				match_state = null
 				_new_session()
 			return
 	if not _scene.is_empty():
 		if _scene.t > 0.4:
 			_end_scene()
+		return
+	if _waiting_choice:
+		return
+	if state == State.DEAD and _sim_ticker:
+		timer = minf(timer, 0.05)
 		return
 	if state == State.READY and phase != Phase.RESULT:
 		if _ready_t > 0.3:
@@ -852,6 +1055,11 @@ func _process(delta: float) -> void:
 		for f in fielders:
 			if f.visible:
 				f.ready_up()
+	if _waiting_choice and autoplay:
+		_choice_t += delta
+		if _choice_t > 1.5:
+			hud.hide_choice()
+			_on_choice(0 if "--career-team" in OS.get_cmdline_user_args() else 1)
 	if autoplay and state == State.SUMMARY:
 		if phase == Phase.INTRO and timer > 1.5:
 			_next_ball()

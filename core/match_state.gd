@@ -73,7 +73,7 @@ static func create(rng_seed: int, opts: Dictionary = {}) -> MatchState:
 
 ## The conditions as BowlingMachine wants them.
 func conditions() -> Dictionary:
-	return {"pitch": pitch, "night": night}
+	return {"pitch": pitch, "night": night, "pace": float(career.get("pace", 1.0))}
 
 func bowler_profile() -> Dictionary:
 	return BowlerProfile.of(bowler_name())
@@ -115,8 +115,30 @@ static func skill_of(order: int) -> BatterSkill:
 	var k: Array = BLUE_SKILL[clampi(order, 0, BLUE_SKILL.size() - 1)]
 	return BatterSkill.new(k[0], k[1], k[2])
 
+## Batter `i` in this match. In a career match your player bats with your ratings, and your
+## team-mates are as good as the level you play at.
+func skill_for(i: int) -> BatterSkill:
+	if not career.is_empty():
+		if i == int(career.pos):
+			return BatterSkill.new("You  ·  " + str(career.role), float(career.power), float(career.timing))
+		var base := skill_of(i)
+		var k := float(career.get("mates", 1.0))
+		return BatterSkill.new(base.role, base.power * k, base.timing * k)
+	return skill_of(i)
+
 func striker_skill() -> BatterSkill:
-	return skill_of(striker)
+	return skill_for(striker)
+
+## In a career match, whether the player's own batter is on strike / has been out.
+func player_on_strike() -> bool:
+	return career.is_empty() or striker == int(career.pos)
+
+func player_out() -> bool:
+	return not career.is_empty() and str(batters[int(career.pos)].out) != ""
+
+## Whether the next ball is the player's to play.
+func players_ball() -> bool:
+	return career.is_empty() or str(career.get("mode", "own")) == "team" or player_on_strike()
 
 ## Remember where the striker hit it, for the fielding captain: degrees from straight
 ## (+ is the off side), metres travelled, runs scored.

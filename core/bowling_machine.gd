@@ -43,6 +43,10 @@ func next_for(style: String, over: int, plan: String = "", prof: Dictionary = {}
 					d.swing *= 0.5
 					if d.target.z > -1.7:
 						d.label = "Yorker"
+	# Club bowlers are slower than international ones: quicks lose more than spinners.
+	var pace := float(cond.get("pace", 1.0))
+	if pace < 1.0:
+		d.speed *= pace if not spinner else lerpf(1.0, pace, 0.4)
 	# A worn pitch: some keep low, some kick up.
 	d.bounce_var = _rng.randfn(0.0, Conditions.wear_sd(str(cond.get("pitch", "good")), over))
 	return d
