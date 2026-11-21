@@ -234,6 +234,8 @@ func _next_ball() -> void:
 		_career_sim()
 		return
 	phase = Phase.PLAY
+	if _sim_ticker:
+		hud.hide_banner()
 	_sim_ticker = false
 	hud.hide_card()
 	hud.radar_clear()
@@ -833,14 +835,30 @@ func _career_sim() -> void:
 	timer = 1.0 if str(res[1]) == "" else 1.6
 	hud.hide_card()
 	hud.clear_result()
+	# Clear away the last ball (yours) so its fielding isn't mistaken for this one.
+	_reset_fielders()
+	ball = null
+	pending = null
+	summary = null
+	ball_node.visible = false
+	blob.visible = false
+	marker.visible = false
+	_trail_pos.clear()
+	for tr in _trail:
+		tr.visible = false
+	batter.reset()
+	stadium.batter_stumps.reset()
+	_cam_pos_to = CAM_HOME
+	_look_to = CAM_LOOK
+	_fov_to = CAM_FOV
+	_cam_parked = false
 	var what: String = ("OUT  ·  %s" % res[1]) if str(res[1]) != "" else {0: "dot ball", 1: "1 run", 2: "2 runs", 3: "3 runs", 4: "FOUR", 6: "SIX"}.get(int(res[0]), "")
-	hud.set_delivery("%s  ·  %s" % [who.to_upper(), what])
+	hud.set_delivery("")
+	var col := Hud.RED if str(res[1]) != "" else (Hud.GOLD if int(res[0]) == 6 else (Hud.BLUE if int(res[0]) == 4 else Hud.DIM))
+	hud.show_banner("%s  ·  %s" % [who.to_upper(), what.to_upper()], "Your partner's ball, played out for you", col)
 	if autoplay:
 		print("partner ball at frame %d: %s" % [_shot_index, what])
-	if str(res[1]) != "":
-		hud.show_big("OUT", Hud.RED)
-	elif int(res[0]) >= 4:
-		hud.show_big("FOUR" if int(res[0]) == 4 else "SIX", Hud.BLUE if int(res[0]) == 4 else Hud.GOLD)
+	if int(res[0]) >= 4 and str(res[1]) == "":
 		sfx.play("cheer", -6.0)
 
 ## Plays one simulated ball. Returns [runs, how_out].
