@@ -8,7 +8,7 @@ enum Mode { STAND, READY, RUN, CATCH, STOP, THROW, DIVE, SLIDE, CELEBRATE }
 const CATCH_REACH := 0.30    # how far in front of the body the hands take a catch
 const STOP_REACH := 0.50
 
-var figure: Figure
+var figure: Body
 var home := Vector3.ZERO
 var mode := Mode.STAND
 var _target := Vector3.ZERO
@@ -20,15 +20,20 @@ var _take_height := 1.0
 var _face_to := Vector3.ZERO  # what to face once there
 var _lift := 0.0              # how far off the grass the body is in a dive
 var _settle := 0.22           # seconds before arrival that the hands go for the ball
+var _pace := 0.0              # running speed, m/s
+var _cele := "jump_loop"
 
 func build(kit: Color, trim: Color, keeper: bool) -> void:
 	_keeper = keeper
-	figure = Figure.new()
+	figure = Body.new()
 	figure.kit = kit
 	figure.trim = trim
 	figure.pads = keeper
+	figure.gloves = keeper
+	figure.skin = Body.skin_for(get_instance_id())
 	add_child(figure)
 	figure.build()
+	_cele = ["jump_loop", "dance", "leap"][get_instance_id() % 3]
 	_pose(0.0)
 
 ## Back to their spot, facing the batter.
@@ -95,6 +100,7 @@ func go(ball_at: Vector3, seconds: float, catching: bool, height: float = 0.0, b
 	_target = flat - Vector3(off.x, 0.0, off.z)
 	_face_to = _target + facing * 5.0
 	_arrive = maxf(seconds, 0.05)
+	_pace = Vector3(_target.x - position.x, 0, _target.z - position.z).length() / _arrive
 	_t = 0.0
 	mode = Mode.RUN
 
@@ -109,6 +115,7 @@ func chase(toward: Vector3, seconds: float, speed: float = 6.2) -> void:
 	_face_to = _target + to.normalized() * 5.0
 	_end_mode = Mode.STAND
 	_arrive = maxf(seconds, 0.05)
+	_pace = dist / _arrive
 	_t = 0.0
 	mode = Mode.RUN
 
@@ -127,6 +134,7 @@ func celebrate(at: Vector3, seconds: float, centre: Vector3) -> void:
 	_end_mode = Mode.CELEBRATE
 	_settle = 0.05
 	_arrive = maxf(seconds, 0.3)
+	_pace = Vector3(at.x - position.x, 0, at.z - position.z).length() / _arrive
 	mode = Mode.RUN
 
 ## Arm comes through to throw the ball in.
@@ -178,83 +186,55 @@ func _process(delta: float) -> void:
 		_pose(_t)
 
 func _pose(time: float) -> void:
-	var p := Figure.Pose.new()
+	var b := figure
 	match mode:
 		Mode.STAND:
-			p.hand_l = Vector3(-0.22, 0.92, -0.05)
-			p.hand_r = Vector3(0.22, 0.92, -0.05)
+			b.release()
+			b.play("idle")
 		Mode.READY:
 			# Crouched, hands out in front, weight forward.
-			var low := 0.62 if _keeper else 0.78
-			p.hips = Vector3(0, low, 0.05)
-			p.lean = 0.55 if _keeper else 0.4
-			p.foot_l = Vector3(-0.28, 0, 0)
-			p.foot_r = Vector3(0.28, 0, 0)
-			p.hand_l = Vector3(-0.16, low - 0.15, -0.38)
-			p.hand_r = Vector3(0.16, low - 0.15, -0.38)
+			var low := 0.55 if _keeper else 0.72
+			b.hold("keeper" if _keeper else "ready", 0.0)
+			b.reach(Vector3(-0.16, low - 0.1, -0.4), Vector3(0.16, low - 0.1, -0.4), 0.85)
 		Mode.RUN:
-			var ph := time * 13.0
-			var s := sin(ph)
-			var c := cos(ph)
-			p.hips = Vector3(0, 0.95 + 0.04 * absf(c), 0)
-			p.lean = 0.25
-			p.foot_l = Vector3(-0.11, maxf(0.0, c) * 0.25, 0.45 * s)
-			p.foot_r = Vector3(0.11, maxf(0.0, -c) * 0.25, -0.45 * s)
-			p.hand_l = Vector3(-0.27, 1.05 - 0.12 * s, -0.32 * s)
-			p.hand_r = Vector3(0.27, 1.05 + 0.12 * s, 0.32 * s)
+			b.release()
+			if _pace > 5.0:
+				b.play("sprint", clampf(_pace / 6.5, 0.7, 1.4))
+			elif _pace > 0.6:
+				b.play("jog", clampf(_pace / 3.6, 0.6, 1.5))
+			else:
+				b.play("idle")
 		Mode.CATCH:
 			# Hands cupped where the ball arrives: overhead (jumping if need be), chest or shin.
 			var h := clampf(_take_height, 0.12, 2.6)
-			var jump := maxf(0.0, h - 2.0)
-			var crouch := clampf((0.9 - h) / 0.8, 0.0, 1.0)
-			p.hips = Vector3(0, 0.93 + jump - 0.30 * crouch, 0.08 * crouch)
-			p.lean = lerpf(-0.08 if h > 1.5 else 0.12, 0.8, crouch)
-			p.foot_l = Vector3(-0.16 - 0.1 * crouch, jump, 0)
-			p.foot_r = Vector3(0.16 + 0.1 * crouch, jump, 0)
-			p.hand_l = Vector3(-0.07, h, -CATCH_REACH)
-			p.hand_r = Vector3(0.07, h, -CATCH_REACH)
+			if h > 2.1:
+				b.play("jump_loop")
+			elif h < 0.5:
+				b.hold("stoop", 0.0)
+			elif h < 0.9:
+				b.hold("ready", 0.0)
+			else:
+				b.play("idle")
+			b.reach(Vector3(-0.07, h, -CATCH_REACH), Vector3(0.07, h, -CATCH_REACH), smoothstep(0.0, 0.6, time))
 		Mode.STOP:
 			# Bent down, hands to the grass.
-			p.hips = Vector3(0, 0.7, 0.1)
-			p.lean = 0.85
-			p.foot_l = Vector3(-0.25, 0, 0.1)
-			p.foot_r = Vector3(0.25, 0, -0.1)
-			p.hand_l = Vector3(-0.07, 0.07, -STOP_REACH)
-			p.hand_r = Vector3(0.07, 0.07, -STOP_REACH)
+			b.hold("stoop", 0.0)
+			b.reach(Vector3(-0.07, 0.07, -STOP_REACH), Vector3(0.07, 0.07, -STOP_REACH), smoothstep(0.0, 0.6, time))
 		Mode.DIVE:
 			# Full length, arms out in front; `time` runs 0..1 as they launch.
 			var d := smoothstep(0.0, 1.0, time)
-			p.hand_l = Vector3(-0.07, 1.98, -0.06)
-			p.hand_r = Vector3(0.07, 1.98, -0.06)
-			p.foot_l = Vector3(-0.10, 0.0, 0.10)
-			p.foot_r = Vector3(0.10, 0.0, -0.05)
+			b.hold("jump_loop", 0.5)
+			b.reach(Vector3(-0.07, 1.98, -0.06), Vector3(0.07, 1.98, -0.06), 1.0)
 			_tilt(-1.42 * d, _lift * d)
 		Mode.SLIDE:
-			# Feet first on one hip, a hand down to drag the ball back.
+			# Feet first, a hand down to drag the ball back.
 			var d := smoothstep(0.0, 1.0, time)
-			p.hips = Vector3(0, 0.80, 0)
-			p.lean = 0.9
-			p.foot_l = Vector3(-0.12, 0.02, -0.20)
-			p.foot_r = Vector3(0.14, 0.30, 0.10)
-			p.hand_l = Vector3(0.20, 0.72, -0.42)
-			p.hand_r = Vector3(0.34, 0.70, -0.42)
+			b.play("slide")
+			b.reach(Vector3(0.20, 0.72, -0.42), Vector3(0.34, 0.70, -0.42), 1.0)
 			_tilt(1.05 * d, 0.10 * d)
 		Mode.CELEBRATE:
-			# Arms up, jumping, a bit out of step with each other.
-			var ph := time * 7.0 + float(get_instance_id() % 7)
-			var jump := 0.16 * absf(sin(ph))
-			p.hips = Vector3(0, 0.93 + jump, 0)
-			p.foot_l = Vector3(-0.14, jump, 0)
-			p.foot_r = Vector3(0.14, jump, 0)
-			p.hand_l = Vector3(-0.30, 1.95 + jump, -0.10)
-			p.hand_r = Vector3(0.30, 1.95 + jump, -0.10)
-			p.lean = -0.05
+			b.release()
+			b.play(_cele)
 		Mode.THROW:
-			var u := clampf(time / 0.25, 0.0, 1.0)
-			p.lean = lerpf(-0.1, 0.35, u)
-			p.chest_yaw = lerpf(0.7, -0.3, u)
-			p.foot_l = Vector3(-0.14, 0, -0.35)
-			p.foot_r = Vector3(0.14, 0, 0.25)
-			p.hand_l = Vector3(-0.25, 1.2, -0.35)
-			p.hand_r = Vector3(0.30, lerpf(1.75, 1.35, u), lerpf(0.30, -0.60, u))
-	figure.apply(p)
+			b.release()
+			b.play("throw", 1.6, 0.08, time < 0.05)

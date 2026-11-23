@@ -242,7 +242,7 @@ func _set_field() -> void:
 		_shirt(fielders[i].figure, others[i % others.size()])
 	_shirt(bowler.figure, match_state.bowler_name())
 
-func _shirt(figure: Figure, full_name: String) -> void:
+func _shirt(figure: Variant, full_name: String) -> void:
 	figure.set_shirt(_surname(full_name), 1 + absi(full_name.hash()) % 98)
 
 func _batter_skill() -> BatterSkill:
