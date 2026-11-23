@@ -70,119 +70,220 @@ static func mat(c: Color, rough: float = 0.75) -> StandardMaterial3D:
 	m.metallic_specular = 0.25 if rough < 0.5 else 0.0
 	return m
 
+## The low-poly look: every triangle is lit as one flat facet (the normal comes from the
+## screen-space slope of the surface), so smooth meshes with few sides read as cut shapes.
+const FACET_CODE := """
+shader_type spatial;
+render_mode diffuse_lambert, specular_disabled;
+uniform vec4 albedo : source_color = vec4(1.0);
+uniform float lift = 0.0;
+void fragment() {
+	ALBEDO = albedo.rgb;
+	ROUGHNESS = 1.0;
+	NORMAL = normalize(cross(dFdx(VERTEX), dFdy(VERTEX)));
+	EMISSION = albedo.rgb * lift;
+}
+"""
+static var _facet_shader: Shader
+static var _facets := {}
+
+static func facet(c: Color) -> ShaderMaterial:
+	var key := c.to_html()
+	if _facets.has(key):
+		return _facets[key]
+	if _facet_shader == null:
+		_facet_shader = Shader.new()
+		_facet_shader.code = FACET_CODE
+	var m := ShaderMaterial.new()
+	m.shader = _facet_shader
+	m.set_shader_parameter("albedo", c)
+	m.set_shader_parameter("lift", 0.12)
+	_facets[key] = m
+	return m
+
+# Face parts, moved to show a mood (see `set_face`).
+var _brows: Array[MeshInstance3D] = []
+var _eyes: Array[Node3D] = []
+var _mouth: MeshInstance3D
+var _grin: MeshInstance3D
+var mood := "focused"
+var _mood_left := 0.0
+var _blink := 0.0
+var _next_blink := 2.0
+
 func build() -> void:
 	var white := Color(0.95, 0.95, 0.92)
 	var legs := white if pads else (trousers if trousers.a > 0.0 else kit.darkened(0.12))
-	_capsule("torso", 0.165, SPINE, kit)
-	_capsule("pelvis", 0.15, 0.16, kit.darkened(0.12))
+	_next_blink = 1.0 + randf() * 3.0
+	_shape("torso", _cyl(0.145, 0.18, 8), 1.0, kit)
+	_shape("pelvis", _cyl(0.155, 0.15, 8), 1.0, kit.darkened(0.12) if trousers.a == 0.0 and not pads else legs)
+	_shape("stripe", _cyl(0.17, 0.172, 8), 1.0, trim)
 	for s in ["l", "r"]:
-		_capsule("upper_" + s, 0.058, UPPER_ARM, kit)
-		_capsule("fore_" + s, 0.047, FOREARM, skin)
-		_ball("hand_" + s, 0.062, white if pads else skin)
-		_capsule("thigh_" + s, 0.088 if pads else 0.08, THIGH, legs)
-		_capsule("shin_" + s, 0.082 if pads else 0.062, SHIN, legs)
+		_capsule("upper_" + s, 0.062, UPPER_ARM, kit)
+		_capsule("fore_" + s, 0.048, FOREARM, skin)
+		if pads:
+			# Batting gloves: chunky white blocks with a cuff in the team colour.
+			_box("hand_" + s, Vector3(0.115, 0.125, 0.1), white)
+		else:
+			_ball("hand_" + s, 0.062, skin)
+		_capsule("thigh_" + s, 0.086, THIGH, legs)
+		_capsule("shin_" + s, 0.074 if pads else 0.062, SHIN, legs)
+		if pads:
+			# Pads: a tall slab in front of each shin, with a knee roll.
+			_shape("pad_" + s, _boxm(Vector3(0.19, 1.0, 0.1)), 1.0, white)
+			_shape("roll_" + s, _boxm(Vector3(0.2, 1.0, 0.13)), 1.0, white.darkened(0.06))
 		var foot := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = Vector3(0.10, 0.08, 0.26)
-		foot.mesh = box
-		foot.material_override = mat(Color(0.93, 0.93, 0.93))
+		foot.mesh = _boxm(Vector3(0.11, 0.08, 0.27))
+		foot.material_override = facet(Color(0.95, 0.95, 0.95))
 		add_child(foot)
 		_seg["foot_" + s] = foot
-	_capsule("stripe", 0.168, 0.06, trim)
 	_head = Node3D.new()
 	add_child(_head)
-	var skull := MeshInstance3D.new()
-	var sm := SphereMesh.new()
-	sm.radius = 0.135
-	sm.height = 0.27
-	sm.radial_segments = 20
-	sm.rings = 10
-	skull.mesh = sm
-	skull.material_override = mat(skin)
-	_head.add_child(skull)
-	# Eyes: whites and pupils, looking where the head points.
-	for side in [-1.0, 1.0]:
-		var eye := MeshInstance3D.new()
-		var em := SphereMesh.new()
-		em.radius = 0.034
-		em.height = 0.068
-		em.radial_segments = 10
-		em.rings = 5
-		eye.mesh = em
-		eye.position = Vector3(side * 0.052, 0.0, -0.112)
-		eye.material_override = mat(Color(0.97, 0.97, 0.95), 0.4)
-		_head.add_child(eye)
-		var pupil := MeshInstance3D.new()
-		var pm2 := SphereMesh.new()
-		pm2.radius = 0.016
-		pm2.height = 0.032
-		pm2.radial_segments = 8
-		pm2.rings = 4
-		pupil.mesh = pm2
-		pupil.position = Vector3(side * 0.052, 0.0, -0.140)
-		pupil.material_override = mat(Color(0.05, 0.05, 0.07), 0.3)
-		_head.add_child(pupil)
-	var cap_mat := mat(kit.darkened(0.35) if helmet else kit, 0.35 if helmet else 0.8)
+	_build_face()
 	if hat:
-		cap_mat = mat(Color(0.96, 0.95, 0.90), 0.8)
-		var brim := MeshInstance3D.new()
-		var bm2 := CylinderMesh.new()
-		bm2.top_radius = 0.27
-		bm2.bottom_radius = 0.27
-		bm2.height = 0.022
-		bm2.radial_segments = 20
-		brim.mesh = bm2
-		brim.position.y = 0.07
-		brim.material_override = cap_mat
-		_head.add_child(brim)
-		var crown := MeshInstance3D.new()
-		var cm2 := CylinderMesh.new()
-		cm2.top_radius = 0.12
-		cm2.bottom_radius = 0.145
-		cm2.height = 0.12
-		cm2.radial_segments = 16
-		crown.mesh = cm2
-		crown.position.y = 0.135
-		crown.material_override = cap_mat
-		_head.add_child(crown)
-		var band := MeshInstance3D.new()
-		var dm := CylinderMesh.new()
-		dm.top_radius = 0.148
-		dm.bottom_radius = 0.148
-		dm.height = 0.03
-		dm.radial_segments = 16
-		band.mesh = dm
-		band.position.y = 0.095
-		band.material_override = mat(kit, 0.8)
-		_head.add_child(band)
-		return
+		_build_hat()
+	else:
+		_build_cap()
+	set_face("focused")
+
+func _build_face() -> void:
+	var dark := Color(0.07, 0.06, 0.08)
+	var skull := _part(_sphere(0.135, 8, 6), skin, Vector3.ZERO)
+	skull.scale = Vector3(0.96, 1.0, 0.96)
+	for side in [-1.0, 1.0]:
+		_part(_sphere(0.03, 6, 3), skin, Vector3(side * 0.13, -0.005, 0.0)).scale = Vector3(0.5, 1.0, 0.8)
+		var eye := Node3D.new()
+		eye.position = Vector3(side * 0.05, -0.004, -0.114)
+		_head.add_child(eye)
+		var white := MeshInstance3D.new()
+		white.mesh = _sphere(0.034, 8, 4)
+		white.material_override = facet(Color(0.98, 0.98, 0.96))
+		white.scale = Vector3(1.0, 1.2, 0.6)
+		eye.add_child(white)
+		var pupil := MeshInstance3D.new()
+		pupil.mesh = _sphere(0.017, 6, 3)
+		pupil.material_override = facet(dark)
+		pupil.position = Vector3(0, 0, -0.022)
+		pupil.scale = Vector3(1.0, 1.25, 0.5)
+		eye.add_child(pupil)
+		_eyes.append(eye)
+		var brow := _part(_boxm(Vector3(0.06, 0.014, 0.02)), dark, Vector3(side * 0.05, 0.046, -0.124))
+		_brows.append(brow)
+	_part(_sphere(0.02, 5, 3), skin.darkened(0.08), Vector3(0, -0.035, -0.133))
+	_mouth = _part(_boxm(Vector3(0.055, 0.011, 0.02)), dark, Vector3(0, -0.075, -0.118))
+	# The grin: a half-disc, flat edge up.
+	var gm := SphereMesh.new()
+	gm.radius = 0.04
+	gm.height = 0.04
+	gm.is_hemisphere = true
+	gm.radial_segments = 8
+	gm.rings = 2
+	_grin = _part(gm, Color(0.45, 0.07, 0.1), Vector3(0, -0.062, -0.118))
+	_grin.rotation.z = PI
+	_grin.scale = Vector3(1.0, 0.85, 0.35)
+
+func _build_cap() -> void:
+	var col := kit.darkened(0.45) if helmet else kit
 	var cap := MeshInstance3D.new()
 	var cm := SphereMesh.new()
-	cm.radius = 0.15 if helmet else 0.142
+	cm.radius = 0.152 if helmet else 0.142
 	cm.height = cm.radius
 	cm.is_hemisphere = true
-	cm.radial_segments = 20
-	cm.rings = 6
+	cm.radial_segments = 8
+	cm.rings = 3
 	cap.mesh = cm
-	cap.position.y = 0.015
-	cap.material_override = cap_mat
+	cap.position.y = 0.012 if helmet else 0.062
+	cap.material_override = facet(col)
 	_head.add_child(cap)
-	var peak := MeshInstance3D.new()
-	var pm := BoxMesh.new()
-	pm.size = Vector3(0.2, 0.018, 0.13)
-	peak.mesh = pm
-	peak.position = Vector3(0, 0.03, -0.17)
-	peak.material_override = cap.material_override
-	_head.add_child(peak)
+	var peak := _part(_boxm(Vector3(0.21, 0.018, 0.12)), col, Vector3(0, 0.03 if helmet else 0.075, -0.165))
+	peak.rotation.x = 0.0 if helmet else 0.22
 	if helmet:
+		# Neck guard and side flaps, a team stripe, and the grille.
+		_part(_boxm(Vector3(0.24, 0.07, 0.12)), col, Vector3(0, -0.02, 0.06))
+		_part(_boxm(Vector3(0.05, 0.012, 0.1)), trim, Vector3(0, 0.158, 0.0))
+		var steel := Color(0.78, 0.79, 0.83)
 		for i in 3:
-			var bar := MeshInstance3D.new()
-			var bm := BoxMesh.new()
-			bm.size = Vector3(0.21, 0.012, 0.012)
-			bar.mesh = bm
-			bar.position = Vector3(0, -0.02 - 0.04 * i, -0.15)
-			bar.material_override = mat(Color(0.75, 0.75, 0.78), 0.3)
-			_head.add_child(bar)
+			_part(_boxm(Vector3(0.22, 0.012, 0.012)), steel, Vector3(0, -0.025 - 0.038 * i, -0.158))
+		for side in [-1.0, 1.0]:
+			_part(_boxm(Vector3(0.012, 0.11, 0.012)), steel, Vector3(side * 0.105, -0.06, -0.152))
+
+func _build_hat() -> void:
+	var cream := Color(0.96, 0.95, 0.90)
+	_part(_cyl(0.27, 0.27, 10, 0.022), cream, Vector3(0, 0.07, 0))
+	_part(_cyl(0.12, 0.145, 8, 0.12), cream, Vector3(0, 0.135, 0))
+	_part(_cyl(0.148, 0.148, 8, 0.03), kit, Vector3(0, 0.095, 0))
+
+## Faces: "focused" (the default), "joy" (big grin, raised brows) or "wince" (pained,
+## crooked mouth). With `seconds`, it goes back to focused afterwards.
+func set_face(kind: String, seconds: float = 0.0) -> void:
+	mood = kind
+	_mood_left = seconds
+	if _mouth == null:
+		return
+	for i in _brows.size():
+		var side := -1.0 if i == 0 else 1.0
+		var b := _brows[i]
+		match kind:
+			"joy":
+				b.rotation.z = side * deg_to_rad(-12.0)
+				b.position.y = 0.056
+			"wince":
+				b.rotation.z = side * deg_to_rad(26.0)
+				b.position.y = 0.04
+			_:
+				b.rotation.z = side * deg_to_rad(14.0)
+				b.position.y = 0.046
+	_mouth.visible = kind != "joy"
+	_grin.visible = kind == "joy"
+	_mouth.rotation.z = deg_to_rad(16.0) if kind == "wince" else 0.0
+	_mouth.position.x = 0.01 if kind == "wince" else 0.0
+
+func _process(delta: float) -> void:
+	if not is_visible_in_tree() or _eyes.is_empty():
+		return
+	if _mood_left > 0.0:
+		_mood_left -= delta
+		if _mood_left <= 0.0:
+			set_face("focused")
+	# Blink now and then; squint while wincing.
+	_next_blink -= delta
+	if _next_blink <= 0.0:
+		_blink = 0.13
+		_next_blink = 2.0 + randf() * 3.5
+	_blink = maxf(_blink - delta, 0.0)
+	var open := 0.12 if _blink > 0.0 else (0.55 if mood == "wince" else 1.0)
+	for e in _eyes:
+		e.scale.y = open
+
+func _part(m: Mesh, c: Color, at: Vector3) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = m
+	mi.material_override = facet(c)
+	mi.position = at
+	_head.add_child(mi)
+	return mi
+
+static func _sphere(r: float, radial: int, rings: int) -> SphereMesh:
+	var m := SphereMesh.new()
+	m.radius = r
+	m.height = r * 2.0
+	m.radial_segments = radial
+	m.rings = rings
+	return m
+
+static func _cyl(bottom: float, top: float, sides: int, height: float = 1.0) -> CylinderMesh:
+	var m := CylinderMesh.new()
+	m.bottom_radius = bottom
+	m.top_radius = top
+	m.height = height
+	m.radial_segments = sides
+	m.rings = 1
+	return m
+
+static func _boxm(size: Vector3) -> BoxMesh:
+	var m := BoxMesh.new()
+	m.size = size
+	return m
 
 ## Rebuild in new colours (a different team).
 func recolour(new_kit: Color, new_trim: Color) -> void:
@@ -197,6 +298,9 @@ func recolour(new_kit: Color, new_trim: Color) -> void:
 		remove_child(c)
 		c.queue_free()
 	_seg.clear()
+	_brows.clear()
+	_eyes.clear()
+	_mouth = null
 	_head = null
 	_name_label = null
 	_number_label = null
@@ -226,42 +330,62 @@ func _shirt_label(size: int) -> Label3D:
 	return l
 
 func _capsule(key: String, radius: float, length: float, c: Color) -> void:
-	var mi := MeshInstance3D.new()
 	var m := CapsuleMesh.new()
 	m.radius = radius
 	m.height = length + radius * 2.0
-	m.radial_segments = 12
-	m.rings = 4
+	m.radial_segments = 6
+	m.rings = 1
+	_shape(key, m, length, c)
+
+## A mesh whose height is `length` when unstretched; `_place` stretches it between joints.
+func _shape(key: String, m: Mesh, length: float, c: Color) -> void:
+	var mi := MeshInstance3D.new()
 	mi.mesh = m
-	mi.material_override = mat(c)
+	mi.material_override = facet(c)
 	mi.set_meta("len", length)
 	add_child(mi)
 	_seg[key] = mi
 
 func _ball(key: String, radius: float, c: Color) -> void:
 	var mi := MeshInstance3D.new()
-	var m := SphereMesh.new()
-	m.radius = radius
-	m.height = radius * 2.0
-	m.radial_segments = 12
-	m.rings = 6
-	mi.mesh = m
-	mi.material_override = mat(c)
+	mi.mesh = _sphere(radius, 6, 4)
+	mi.material_override = facet(c)
 	add_child(mi)
 	_seg[key] = mi
 
-func _place(key: String, a: Vector3, b: Vector3) -> void:
+func _box(key: String, size: Vector3, c: Color) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = _boxm(size)
+	mi.material_override = facet(c)
+	add_child(mi)
+	_seg[key] = mi
+
+## Stretch a segment from `a` to `b`. `side` (optional) says which way its width faces.
+func _place(key: String, a: Vector3, b: Vector3, side: Vector3 = Vector3.ZERO) -> void:
 	var mi: MeshInstance3D = _seg[key]
 	var d := b - a
 	var l := d.length()
 	if l < 0.0001:
 		return
 	var y := d / l
-	var ref := Vector3.RIGHT if absf(y.x) < 0.9 else Vector3.FORWARD
-	var x := ref.cross(y).normalized()
+	var x: Vector3
+	if side != Vector3.ZERO and absf(side.normalized().dot(y)) < 0.95:
+		x = (side - y * side.dot(y)).normalized()
+	else:
+		var ref := Vector3.RIGHT if absf(y.x) < 0.9 else Vector3.FORWARD
+		x = ref.cross(y).normalized()
 	var z := x.cross(y)
 	var rest: float = mi.get_meta("len")
 	mi.transform = Transform3D(Basis(x, y * (l / rest), z), (a + b) * 0.5)
+
+## Body blocks (torso, pelvis, stripe) follow the body's own frame and are flattened front
+## to back, with a flat facet facing forward.
+func _place_body(key: String, basis: Basis, a: Vector3, b: Vector3, depth: float) -> void:
+	var mi: MeshInstance3D = _seg[key]
+	var rest: float = mi.get_meta("len")
+	var l := (b - a).length()
+	var k := basis * Basis.from_scale(Vector3(1.0, l / rest, depth)) * Basis(Vector3.UP, PI / 8.0)
+	mi.transform = Transform3D(k, (a + b) * 0.5)
 
 static func two_bone(root: Vector3, target: Vector3, l1: float, l2: float, pole: Vector3) -> Array:
 	var d := target - root
@@ -280,13 +404,13 @@ func apply(p: Pose) -> void:
 	var neck := p.hips + up * SPINE
 	shoulder_l = neck - up * 0.05 - _torso_basis.x * SHOULDER_HALF
 	shoulder_r = neck - up * 0.05 + _torso_basis.x * SHOULDER_HALF
-	_place("torso", p.hips + up * 0.06, neck - up * 0.06)
-	_place("stripe", p.hips + up * 0.30, p.hips + up * 0.36)
-	_place("pelvis", p.hips - pelvis.x * 0.08, p.hips + pelvis.x * 0.08)
+	_place_body("torso", _torso_basis, p.hips + up * 0.04, neck - up * 0.02, 0.8)
+	_place_body("stripe", _torso_basis, p.hips + up * 0.28, p.hips + up * 0.34, 0.8)
+	_place_body("pelvis", pelvis, p.hips - Vector3(0, 0.1, 0), p.hips + Vector3(0, 0.1, 0), 0.78)
 	_head.transform = Transform3D(Basis(Vector3.UP, p.head_yaw).scaled(Vector3.ONE * HEAD_SCALE), neck + up * 0.21)
 	if _number_label != null:
-		_number_label.transform = Transform3D(_torso_basis, p.hips + up * 0.17 + _torso_basis.z * 0.172)
-		_name_label.transform = Transform3D(_torso_basis, p.hips + up * 0.435 + _torso_basis.z * 0.16)
+		_number_label.transform = Transform3D(_torso_basis, p.hips + up * 0.17 + _torso_basis.z * 0.13)
+		_name_label.transform = Transform3D(_torso_basis, p.hips + up * 0.435 + _torso_basis.z * 0.146)
 	var fwd := -_torso_basis.z
 	var arm_pole := Vector3.DOWN * 0.6 - fwd * 0.5
 	_limb("upper_l", "fore_l", "hand_l", shoulder_l, p.hand_l, UPPER_ARM, FOREARM, arm_pole - _torso_basis.x * 0.5)
@@ -299,13 +423,26 @@ func _limb(a: String, b: String, end: String, root: Vector3, target: Vector3, l1
 	var r := two_bone(root, target, l1, l2, pole)
 	_place(a, root, r[0])
 	_place(b, r[0], r[1])
-	(_seg[end] as MeshInstance3D).position = r[1]
+	var h: MeshInstance3D = _seg[end]
+	h.position = r[1]
+	if pads:
+		# Gloves turn with the forearm.
+		var y: Vector3 = (r[1] - r[0]).normalized()
+		var x := Vector3.RIGHT if absf(y.x) < 0.9 else Vector3.FORWARD
+		x = (x - y * x.dot(y)).normalized()
+		h.basis = Basis(x, y, x.cross(y))
 
 func _leg(s: String, hip: Vector3, foot: Vector3, pole: Vector3, yaw: float) -> void:
 	var ankle := foot + Vector3(0, 0.09, 0)
 	var r := two_bone(hip, ankle, THIGH, SHIN, pole)
 	_place("thigh_" + s, hip, r[0])
 	_place("shin_" + s, r[0], r[1])
+	if pads:
+		var fwd := -Basis(Vector3.UP, yaw).z
+		var sx := Basis(Vector3.UP, yaw).x
+		var down: Vector3 = (r[1] - r[0]).normalized()
+		_place("pad_" + s, r[0] + fwd * 0.055 - down * 0.06, r[1] + fwd * 0.06 + down * 0.02, sx)
+		_place("roll_" + s, r[0] + fwd * 0.06 - down * 0.08, r[0] + fwd * 0.06 + down * 0.04, sx)
 	var f: MeshInstance3D = _seg["foot_" + s]
 	var b := Basis(Vector3.UP, yaw)
 	f.transform = Transform3D(b, r[1] - Vector3(0, 0.05, 0) - b.z * 0.07)

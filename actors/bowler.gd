@@ -31,6 +31,7 @@ const FINISH := Vector3(0.5, 0.0, -2.1)
 func celebrate() -> void:
 	celebrating = true
 	_ct = 0.0
+	figure.set_face("joy", 3.0)
 
 ## Take on a bowler's action ("" keeps a plain pace or spin action) and arm.
 func set_action(action_name: String, left: bool, spinner: bool) -> void:

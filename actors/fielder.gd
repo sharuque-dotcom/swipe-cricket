@@ -115,6 +115,7 @@ func chase(toward: Vector3, seconds: float, speed: float = 6.2) -> void:
 ## A wicket: run to `at` (or stay put if it is where they are) and celebrate there,
 ## facing `centre`.
 func celebrate(at: Vector3, seconds: float, centre: Vector3) -> void:
+	figure.set_face("joy", 3.5)
 	_tilt(0.0, 0.0)
 	_t = 0.0
 	_face_to = centre

@@ -32,6 +32,7 @@ func walk(from: Vector3, to: Vector3, seconds: float, delay: float = 0.0, head_d
 	_delay = delay
 	_t = 0.0
 	glum = head_down
+	figure.set_face("wince" if head_down else "focused")
 	position = from
 	var d := to - from
 	if d.length() > 0.1:

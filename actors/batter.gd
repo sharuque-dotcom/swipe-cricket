@@ -121,6 +121,7 @@ func _steps(delta: float) -> float:
 ## "milestone": bat raised to the crowd. "win": both arms up, jumping.
 func celebrate(kind: String) -> void:
 	_cele = kind
+	figure.set_face("joy", 3.5)
 	_go(Phase.CELEBRATE)
 
 func _go(p: Phase) -> void:
