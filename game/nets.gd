@@ -128,7 +128,7 @@ func _ready() -> void:
 	ball_node.visible = false
 	add_child(ball_node)
 	blob = _disc(0.09, Color(0, 0, 0, 0.38))
-	marker = _disc(0.20, Color(1.0, 0.9, 0.2, 0.75), 0.13)
+	marker = _disc(0.22, Color(0.95, 0.08, 0.1, 0.95), 0.12)
 
 	cam = Camera3D.new()
 	cam.fov = CAM_FOV
