@@ -19,6 +19,8 @@ var _fresh := false
 
 # Who has the ball. Once a fielder gathers it the ball sits in their hands, then is thrown in.
 const HOLD_BEFORE_THROW := 0.4
+## The throwing clip lets go of the ball this long after it starts.
+const THROW_WINDUP := 0.2
 var _taker: Fielder = null    # the fielder going for the ball (null with _take_at set = the bowler)
 var _take_at := -1.0          # ball-clock time at which they have it
 var _held := false
@@ -26,6 +28,9 @@ var _held_for := 0.0
 var _throws := false
 var _throw_from := Vector3.ZERO
 var _throw_time := 0.0
+var _take_pos := Vector3.ZERO   # where the ball was when it reached the fielder
+var _wound := false
+var _caught_call := {}   # the CAUGHT call, waiting for the ball to reach the hands     # the throwing action has started; the ball is in the throwing hand
 var _hold_pos := Vector3.ZERO
 
 var umpire: Umpire
@@ -275,6 +280,8 @@ func _next_ball() -> void:
 	_held = false
 	_throws = false
 	_throw_time = 0.0
+	_wound = false
+	_caught_call = {}
 	ball_no = match_state.balls + 1
 	machine.state = match_state.machine_state
 	Conditions.apply(match_state.pitch, match_state.night, match_state.over_index())
@@ -364,6 +371,8 @@ func _reset_fielders() -> void:
 	_held = false
 	_throws = false
 	_throw_time = 0.0
+	_wound = false
+	_caught_call = {}
 	_stumping = false
 	_stumps_broken = false
 
@@ -509,21 +518,35 @@ func _show_ball() -> void:
 		_held_for = 0.0
 		_cam_parked = true
 		_trail_pos.clear()
+		_take_pos = Vector3(ball.pos.x, maxf(ball.pos.y, BallPhysics.RADIUS), ball.pos.z)
 		_hold_pos = _taker.hands_global() if _taker != null else Vector3(ball.pos.x, maxf(ball.pos.y, BallPhysics.RADIUS), ball.pos.z)
 		if _taker != null:
 			sfx.play("bounce", -9.0)
+		_call_catch()
 	if _held:
 		var at := _taker.hands_global() if _taker != null and _held_for < HOLD_BEFORE_THROW else _hold_pos
-		if _throws and _held_for >= (0.15 if _stumping else HOLD_BEFORE_THROW):
+		if _taker != null and _held_for < 0.1:
+			# Settle into the hands over a few frames rather than jumping.
+			at = _take_pos.lerp(at, smoothstep(0.0, 0.1, _held_for))
+		var release := 0.15 if _stumping else HOLD_BEFORE_THROW
+		if _throws and not _stumping and _taker != null and not _wound and _held_for >= release - THROW_WINDUP:
+			# Wind up: the arm comes over with the ball in the hand, and lets go at `release`.
+			_wound = true
+			_taker.throw_to(fielders[0].hands_global())
+			fielders[0].take_throw(_taker.hands_global())
+		if _wound and _held_for < release:
+			at = _taker.throw_hand()
+		if _throws and _held_for >= release:
 			var keeper := fielders[0]
 			# In to the keeper, or (a stumping) the keeper's underarm flick at the stumps.
 			var to := Vector3(0.0, 0.45, 0.0) if _stumping else keeper.hands_global()
 			if _throw_time <= 0.0:
-				_throw_from = _taker.hands_global()
+				_throw_from = _taker.throw_hand() if _wound else _taker.hands_global()
 				_throw_time = maxf(_throw_from.distance_to(to) / Fielding.THROW_SPEED, 0.25)
-				_taker.throw_to(to)
-				if not _stumping:
-					keeper.take_throw(_throw_from)
+				if not _wound:
+					_taker.throw_to(to)
+					if not _stumping:
+						keeper.take_throw(_throw_from)
 			var u := clampf((_held_for - (0.15 if _stumping else HOLD_BEFORE_THROW)) / _throw_time, 0.0, 1.0)
 			var arc := _throw_from.distance_to(to) * (0.02 if _stumping else 0.07)
 			at = _throw_from.lerp(to, u) + Vector3.UP * (4.0 * arc * u * (1.0 - u))
@@ -539,6 +562,14 @@ func _show_ball() -> void:
 	elif state == State.HIT:
 		hud.radar_ball(ball.pos)
 	super._show_ball()
+
+func _call_catch() -> void:
+	if _caught_call.is_empty():
+		return
+	hud.show_big("CAUGHT!", Color(1.0, 0.3, 0.3))
+	hud.show_shot(str(_caught_call.line), str(_caught_call.sub))
+	sfx.play("groan", -2.0)
+	_caught_call = {}
 
 func _connect() -> void:
 	super._connect()
@@ -562,12 +593,15 @@ func _score_hit() -> void:
 			else "c & b %s" % _surname(match_state.bowler_name())
 		if r.fielder_name == "keeper":
 			how = "c †keeper b %s" % _surname(match_state.bowler_name())
-		hud.show_big("CAUGHT!", Color(1.0, 0.3, 0.3))
-		hud.show_shot("%s  %s" % [match_state.striker_name(), how], "%s · %d (%d)" % [pending.shot_name,
-			match_state.batters[match_state.striker].runs, match_state.batters[match_state.striker].balls + 1])
-		sfx.play("groan", -2.0)
+		# The call comes when the ball is in the hands, not while it is still in the air.
+		_caught_call = {"line": "%s  %s" % [match_state.striker_name(), how], "sub": "%s · %d (%d)" % [pending.shot_name,
+			match_state.batters[match_state.striker].runs, match_state.batters[match_state.striker].balls + 1]}
+		var wait := maxf(0.0, _take_at - ball.time) if _take_at >= 0.0 else 0.0
+		if wait <= 0.0:
+			_call_catch()
+		timer = 1.6 + wait
 		_record(0, how)
-		_big_moment("OUT", "%s  %s" % [who, how], Hud.RED, Umpire.Sig.OUT, 0.9)
+		_big_moment("OUT", "%s  %s" % [who, how], Hud.RED, Umpire.Sig.OUT, wait + 0.9)
 		return
 	super._score_hit()
 	if r != null and not r.boundary and r.fielder >= 0:

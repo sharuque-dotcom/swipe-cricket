@@ -34,6 +34,11 @@ var _next_blink := 2.0
 var _name_label: Label3D
 var _number_label: Label3D
 var _back: BoneAttachment3D
+# Where the hands really are after animation and IK (bone poses read outside the skeleton's
+# update do not include the IK), refreshed every time the skeleton updates.
+var _hand_l_now := Vector3.ZERO
+var _hand_r_now := Vector3.ZERO
+var _have_hands := false
 
 const SKINS := [Color(0.72, 0.5, 0.36), Color(0.55, 0.37, 0.25), Color(0.82, 0.62, 0.48), Color(0.4, 0.27, 0.18),
 	Color(0.66, 0.46, 0.33)]
@@ -55,6 +60,7 @@ func build() -> void:
 		_meshes[m.name] = m
 	_paint()
 	_targets()
+	skeleton.skeleton_updated.connect(_cache_hands)
 	_next_blink = 1.0 + randf() * 3.0
 	play("idle")
 
@@ -134,7 +140,7 @@ func hold(name: String, at: float) -> void:
 	if anim == null or not anim.has_animation(name):
 		return
 	if name != clip:
-		anim.play(name, 0.12)
+		anim.play(name, 0.08)
 		clip = name
 		anim.speed_scale = 1.0
 		if at > 0.0:
@@ -160,6 +166,20 @@ func hands_global() -> Vector3:
 	if _ik_w > 0.5:
 		return (_target_l.global_position + _target_r.global_position) * 0.5
 	return (hand_global("l") + hand_global("r")) * 0.5
+
+## Where the hands actually are now (after IK), in world space.
+func hands_now() -> Vector3:
+	if not _have_hands:
+		return hands_global()
+	return (_hand_l_now + _hand_r_now) * 0.5
+
+func hand_r_now() -> Vector3:
+	return _hand_r_now if _have_hands else hand_global("r")
+
+func _cache_hands() -> void:
+	_hand_l_now = hand_global("l")
+	_hand_r_now = hand_global("r")
+	_have_hands = true
 
 func hand_global(side: String) -> Vector3:
 	var i := skeleton.find_bone("hand_" + side)

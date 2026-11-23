@@ -74,7 +74,7 @@ signal auto_bowl_toggled(on: bool)
 ## The shot chosen before each ball. Emits `intent_changed("defend"|"ground"|"lofted")`.
 signal intent_changed(intent: String)
 var intent_buttons: Array[Control] = []
-var _intent_bar: HBoxContainer
+var _intent_bar: VBoxContainer
 const INTENTS := [["defend", "DEFEND"], ["ground", "GROUND"], ["lofted", "LOFTED"]]
 
 ## A card with buttons: the game waits for one. Emits `choice_made(index)`.
@@ -688,18 +688,20 @@ func hide_choice() -> void:
 func choice_visible() -> bool:
 	return _choice != null and _choice.visible
 
-## The DEFEND / GROUND / LOFTED switch above the radar, set to `current`.
+## The DEFEND / GROUND / LOFTED switch: three small buttons stacked at the right edge,
+## above the auto-bowl switch, clear of the batter. Set to `current`.
 func show_intent(current: String) -> void:
 	if _intent_bar == null:
-		_intent_bar = HBoxContainer.new()
-		_intent_bar.add_theme_constant_override("separation", 8)
+		_intent_bar = VBoxContainer.new()
+		_intent_bar.add_theme_constant_override("separation", 6)
+		_intent_bar.anchor_left = 1.0
 		_intent_bar.anchor_right = 1.0
 		_intent_bar.anchor_top = 1.0
 		_intent_bar.anchor_bottom = 1.0
-		_intent_bar.offset_left = MARGIN
+		_intent_bar.offset_left = -(MARGIN + 132)
 		_intent_bar.offset_right = -MARGIN
-		_intent_bar.offset_top = -(MARGIN + 250 + 64)
-		_intent_bar.offset_bottom = -(MARGIN + 250)
+		_intent_bar.offset_top = -(MARGIN + 40 + 58 + 12 + 3 * 46 + 12)
+		_intent_bar.offset_bottom = -(MARGIN + 40 + 58 + 12)
 		_root.add_child(_intent_bar)
 		_root.move_child(_intent_bar, 1)
 		for it: Array in INTENTS:
@@ -707,9 +709,10 @@ func show_intent(current: String) -> void:
 			b.text = str(it[1])
 			b.toggle_mode = true
 			b.focus_mode = Control.FOCUS_NONE
-			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b.custom_minimum_size = Vector2(132, 46)
+			b.size_flags_vertical = Control.SIZE_EXPAND_FILL
 			b.add_theme_font_override("font", font("bold"))
-			b.add_theme_font_size_override("font_size", 26)
+			b.add_theme_font_size_override("font_size", 20)
 			var key := str(it[0])
 			b.pressed.connect(func():
 				_set_intent(key)
@@ -729,11 +732,11 @@ func _set_intent(current: String) -> void:
 		b.set_pressed_no_signal(on)
 		var c: Color = {"defend": GREEN, "ground": BLUE, "lofted": GOLD}[INTENTS[i][0]]
 		for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
-			var sb := pill_box(Color(c.r, c.g, c.b, 0.92) if on else Color(NAVY.r, NAVY.g, NAVY.b, 0.78), 16)
-			sb.border_color = c if on else Color(1, 1, 1, 0.18)
+			var sb := pill_box(Color(c.r, c.g, c.b, 0.92) if on else Color(NAVY.r, NAVY.g, NAVY.b, 0.6), 14)
+			sb.border_color = c if on else Color(1, 1, 1, 0.16)
 			sb.set_border_width_all(2)
-			sb.content_margin_top = 10
-			sb.content_margin_bottom = 12
+			sb.content_margin_top = 4
+			sb.content_margin_bottom = 6
 			b.add_theme_stylebox_override(st, sb)
 		for k in ["font_color", "font_hover_color", "font_pressed_color", "font_hover_pressed_color", "font_focus_color"]:
 			b.add_theme_color_override(k, NAVY if on else DIM)

@@ -70,7 +70,7 @@ func go(ball_at: Vector3, seconds: float, catching: bool, height: float = 0.0, b
 	_take_height = height
 	_end_mode = Mode.CATCH if catching else Mode.STOP
 	var facing := -dir
-	_settle = 0.22
+	_settle = 0.34
 	# At full stretch they leave their feet: a dive for a catch or a stop they only just
 	# reach, a feet-first slide to haul the ball in at the rope.
 	if dist > 1.5:
@@ -78,11 +78,11 @@ func go(ball_at: Vector3, seconds: float, catching: bool, height: float = 0.0, b
 		if not catching and Pitch.distance_from_centre(flat) > 55.0 and pace > 2.5:
 			_end_mode = Mode.SLIDE
 			facing = run_dir
-			_settle = 0.34
+			_settle = 0.44
 		elif pace > (4.2 if catching else 5.0) or (catching and height < 0.45 and pace > 2.5):
 			_end_mode = Mode.DIVE
 			facing = run_dir
-			_settle = 0.30
+			_settle = 0.40
 	# Work out where the hands end up in the final pose, and stand so that is where the ball is.
 	var keep := mode
 	var keep_yaw := rotation.y
@@ -90,7 +90,7 @@ func go(ball_at: Vector3, seconds: float, catching: bool, height: float = 0.0, b
 	_lift = 0.0
 	mode = _end_mode
 	_pose(1.0)
-	var off := hands_global() - global_position
+	var off := figure.hands_global() - global_position
 	if _end_mode == Mode.DIVE:
 		_lift = maxf(clampf(height, 0.14, 1.4) - off.y, 0.1)
 	mode = keep
@@ -152,8 +152,13 @@ func take_throw(from: Vector3) -> void:
 	mode = Mode.CATCH
 	_pose(0.0)
 
+## Where the hands really are (after the animation and IK).
 func hands_global() -> Vector3:
-	return figure.hands_global()
+	return figure.hands_now()
+
+## The throwing hand, where the ball sits during the throw.
+func throw_hand() -> Vector3:
+	return figure.hand_r_now()
 
 func _face(p: Vector3) -> void:
 	var d := Vector3(p.x - position.x, 0.0, p.z - position.z)
@@ -207,6 +212,7 @@ func _pose(time: float) -> void:
 		Mode.CATCH:
 			# Hands cupped where the ball arrives: overhead (jumping if need be), chest or shin.
 			var h := clampf(_take_height, 0.12, 2.6)
+			figure.position.y = maxf(0.0, h - 1.95) * smoothstep(0.0, 1.0, time)
 			if h > 2.1:
 				b.play("jump_loop")
 			elif h < 0.5:
@@ -215,11 +221,11 @@ func _pose(time: float) -> void:
 				b.hold("ready", 0.0)
 			else:
 				b.play("idle")
-			b.reach(Vector3(-0.07, h, -CATCH_REACH), Vector3(0.07, h, -CATCH_REACH), smoothstep(0.0, 0.6, time))
+			b.reach(Vector3(-0.07, h, -CATCH_REACH), Vector3(0.07, h, -CATCH_REACH), smoothstep(0.0, 0.45, time))
 		Mode.STOP:
 			# Bent down, hands to the grass.
 			b.hold("stoop", 0.0)
-			b.reach(Vector3(-0.07, 0.07, -STOP_REACH), Vector3(0.07, 0.07, -STOP_REACH), smoothstep(0.0, 0.6, time))
+			b.reach(Vector3(-0.07, 0.07, -STOP_REACH), Vector3(0.07, 0.07, -STOP_REACH), smoothstep(0.0, 0.45, time))
 		Mode.DIVE:
 			# Full length, arms out in front; `time` runs 0..1 as they launch.
 			var d := smoothstep(0.0, 1.0, time)
