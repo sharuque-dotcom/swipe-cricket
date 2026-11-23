@@ -369,6 +369,9 @@ func _reset_fielders() -> void:
 
 func _refresh_hud() -> void:
 	hud.set_match(match_state)
+	var m := match_state
+	stadium.set_board("%s  %d/%d" % [m.blue_name, m.runs, m.wickets],
+		"%s OVERS  ·  TARGET %d" % [m.overs_text(), m.target] if m.target > 0 else "%s OVERS" % m.overs_text())
 	_shirt(batter.figure, match_state.striker_name())
 	batter.vary(match_state.striker)
 	_shirt(non_striker.figure, str(match_state.batters[match_state.non_striker].name))

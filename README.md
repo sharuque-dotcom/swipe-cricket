@@ -156,6 +156,24 @@ godot --headless --export-debug Android build/swipe-cricket-debug.apk
 
 CI builds the APK and a web build on every push; download them from the run's artifacts.
 
+## Art
+
+The low-poly look is built by scripts, run with Blender 4.2:
+
+- `art/characters/player.py` builds `art/player.glb`, the animated player used for fielders,
+  the umpire and walk-outs. Its skeleton and most animations come from Quaternius'
+  [Universal Animation Library](https://opengameart.org/content/universal-animation-library)
+  and [Universal Animation Library 2](https://opengameart.org/content/universal-animation-library-2)
+  (both CC0); clips from the second are retargeted onto the first's rig, and the fielding
+  crouches (ready, ground stop, keeper squat) are posed in the script.
+  `blender -b -P art/characters/player.py -- UAL1.glb UAL2.glb art/player.glb`
+- `art/stadium.py` builds `art/stadium.glb`: stands, pavilion and scoreboard, floodlight towers
+  and dugouts. `blender -b -P art/stadium.py -- art/stadium.glb`
+- `art/characters/style_sheet.py` renders the four style options the look was chosen from.
+
+The batter and bowler are still drawn in code (`actors/figure.gd`) in the same style, because
+their bats and arms are placed exactly by the shot and bowling maths.
+
 ## Layout
 
 - `core/` deterministic simulation: ball physics, delivery solver, shot resolution, scoring,

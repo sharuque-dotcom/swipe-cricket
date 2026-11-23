@@ -11,6 +11,9 @@ var _pitch_mat: ShaderMaterial
 var _backdrop_mat: ShaderMaterial
 var _lights: Array[Node3D] = []
 var sight_screen: MeshInstance3D
+var _lamp_mat: ShaderMaterial
+var _board: Label3D
+var _board_sub: Label3D
 
 func build() -> void:
 	_sky()
@@ -163,13 +166,66 @@ func _ring() -> void:
 	add_child(rope)
 	_band(69.0, 0.0, 69.0, 1.3, _shader("res://world/boards.gdshader"))
 	crowd_material = _shader("res://world/crowd.gdshader")
-	_band(71.0, 2.2, 99.0, 25.0, crowd_material)
-	_band(69.0, 1.3, 71.0, 2.2, _flat(Color(0.30, 0.32, 0.38)))
-	_band(93.0, 29.0, 104.0, 27.5, _flat(Color(0.34, 0.38, 0.46)))
-	_band(99.0, 0.0, 99.0, 28.0, _flat(Color(0.22, 0.25, 0.33)))
-	_backdrop()
+	_stands()
 	# Sight screen behind the bowler: white for a red ball, black for a white one.
 	sight_screen = _box(Vector3(14, 7, 0.4), Vector3(0, 3.5, Pitch.FIELD_CENTRE.z - 67.5), Color(0.95, 0.95, 0.95), 1.0)
+
+## The stands, pavilion, floodlight towers and dugouts: low-poly, built in Blender by
+## art/stadium.py. Surfaces are coloured here by their material's name.
+const STAND_COLOURS := {
+	"concrete": Color(0.72, 0.72, 0.76), "concrete_dark": Color(0.36, 0.38, 0.45), "roof": Color(0.86, 0.88, 0.92),
+	"roof_under": Color(0.28, 0.3, 0.36), "steel": Color(0.32, 0.34, 0.4), "accent": Color(0.12, 0.3, 0.75),
+	"accent2": Color(0.96, 0.76, 0.12), "glass": Color(0.22, 0.36, 0.52), "screen": Color(0.03, 0.04, 0.07),
+	"wood": Color(0.55, 0.38, 0.22)}
+
+func _stands() -> void:
+	var scene: Node3D = (load("res://art/stadium.glb") as PackedScene).instantiate()
+	scene.position = Pitch.FIELD_CENTRE
+	add_child(scene)
+	_lamp_mat = ShaderMaterial.new()
+	_lamp_mat.shader = Figure.facet(Color.WHITE).shader
+	_lamp_mat.set_shader_parameter("albedo", Color(0.85, 0.87, 0.92))
+	for m in scene.find_children("*", "MeshInstance3D", true, false):
+		var mi := m as MeshInstance3D
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		for i in mi.mesh.get_surface_count():
+			var src := mi.mesh.surface_get_material(i)
+			var role: String = src.resource_name if src != null else ""
+			var mat: Material
+			match role:
+				"crowd":
+					mat = crowd_material
+				"lamp":
+					mat = _lamp_mat
+				_:
+					mat = Figure.facet(STAND_COLOURS.get(role, Color(0.6, 0.6, 0.6)))
+			mi.set_surface_override_material(i, mat)
+	# The scoreboard on the pavilion roof.
+	var anchor := scene.find_child("ScoreboardAnchor", true, false) as Node3D
+	if anchor != null:
+		_board = _board_label(anchor, 900, Vector3(0, 1.2, 0.3), Color(1.0, 0.82, 0.2))
+		_board_sub = _board_label(anchor, 420, Vector3(0, -2.4, 0.3), Color(0.9, 0.93, 1.0))
+		set_board("SWIPE CRICKET", "")
+
+func _board_label(anchor: Node3D, size: int, at: Vector3, c: Color) -> Label3D:
+	var l := Label3D.new()
+	l.font = Hud.font("bold")
+	l.font_size = size
+	l.pixel_size = 0.006
+	l.modulate = c
+	l.outline_size = 0
+	l.shaded = false
+	l.double_sided = false
+	l.position = at
+	anchor.add_child(l)
+	return l
+
+## What the scoreboard shows: a big line and a small one.
+func set_board(big: String, small: String) -> void:
+	if _board == null:
+		return
+	_board.text = big
+	_board_sub.text = small
 
 ## Size and place of the stadium photo: a card standing just behind the far boards.
 ## Sized for the batting camera: it fills the view with roof, floodlights and two packed
@@ -202,6 +258,7 @@ func set_conditions(pitch: String, night: bool) -> void:
 		_build_floodlights()
 	for l in _lights:
 		l.visible = night
+	_lamp_mat.set_shader_parameter("lift", 2.2 if night else 0.1)
 	if night:
 		_sky_mat.sky_top_color = Color(0.015, 0.025, 0.07)
 		_sky_mat.sky_horizon_color = Color(0.10, 0.12, 0.20)
@@ -212,7 +269,7 @@ func set_conditions(pitch: String, night: bool) -> void:
 		_sun.rotation_degrees = Vector3(-72.0, 14.0, 0.0)
 		_sun.light_color = Color(0.94, 0.97, 1.0)
 		_sun.light_energy = 1.05
-		_backdrop_mat.set_shader_parameter("tint", Color(0.48, 0.52, 0.66))
+		pass
 		crowd_material.set_shader_parameter("lit", 0.62)
 		_env.tonemap_exposure = 1.18
 	else:
@@ -225,7 +282,7 @@ func set_conditions(pitch: String, night: bool) -> void:
 		_sun.rotation_degrees = Vector3(-52.0, 28.0, 0.0)
 		_sun.light_color = Color(1.0, 0.96, 0.88)
 		_sun.light_energy = 0.72
-		_backdrop_mat.set_shader_parameter("tint", Color(1, 1, 1))
+		pass
 		crowd_material.set_shader_parameter("lit", 1.0)
 		_env.tonemap_exposure = 1.05
 
@@ -242,30 +299,13 @@ func _build_floodlights() -> void:
 	for a in [45.0, 135.0, 225.0, 315.0]:
 		var root := Node3D.new()
 		var r := deg_to_rad(a)
-		root.position = Pitch.FIELD_CENTRE + Vector3(cos(r), 0, sin(r)) * 96.0
+		root.position = Pitch.FIELD_CENTRE + Vector3(cos(r), 0, sin(r)) * 98.5
 		add_child(root)
-		var pole := MeshInstance3D.new()
-		var cm := CylinderMesh.new()
-		cm.top_radius = 0.6
-		cm.bottom_radius = 1.0
-		cm.height = 46.0
-		pole.mesh = cm
-		pole.position.y = 23.0
-		pole.material_override = Figure.mat(Color(0.25, 0.27, 0.32))
-		root.add_child(pole)
-		var head := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		bm.size = Vector3(10, 6, 1.2)
-		head.mesh = bm
-		head.position.y = 48.0
-		head.rotation.y = -r + PI * 0.5
-		head.material_override = Figure.mat(Color(0.95, 0.96, 1.0))
-		root.add_child(head)
 		var glow := MeshInstance3D.new()
 		var q := QuadMesh.new()
 		q.size = Vector2(34, 34)
 		glow.mesh = q
-		glow.position.y = 48.0
+		glow.position.y = 49.0
 		var m := StandardMaterial3D.new()
 		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -277,8 +317,6 @@ func _build_floodlights() -> void:
 		glow.material_override = m
 		glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(glow)
-		pole.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		head.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.visible = false
 		_lights.append(root)
 
