@@ -932,6 +932,12 @@ func show_card(d: Dictionary) -> void:
 		_card_col.add_child(_gap(14))
 		for r: Array in rows:
 			_card_col.add_child(_row(str(r[0]), str(r[1]), r[2] if r.size() > 2 else Color(0, 0, 0, 0)))
+	if d.has("wagon") and not (d.wagon as Array).is_empty():
+		_card_col.add_child(_gap(10))
+		var ww := WagonWheel.new()
+		ww.shots = d.wagon
+		ww.custom_minimum_size = Vector2(0, 250)
+		_card_col.add_child(ww)
 	for note in d.get("notes", []):
 		var nl := _text(str(note), "med", 27, DIM)
 		nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1664,3 +1670,37 @@ class Radar:
 			draw_circle(q, 4.0, Hud.GOLD if s.kind == Fielding.Kind.KEEPER else Hud.RED)
 		draw_circle(_map(Vector3(0, 0, -1.0), c, k), 5.5, Hud.NAVY)
 		draw_circle(_map(Vector3(0, 0, -1.0), c, k), 4.0, Hud.BLUE)
+
+
+## Where the runs went: a line from the bat for every scoring shot, coloured by runs.
+class WagonWheel:
+	extends Control
+	var shots: Array = []
+
+	func _draw() -> void:
+		var r := minf(size.y * 0.5 - 6.0, 120.0)
+		var c := Vector2(size.x * 0.5, size.y * 0.5)
+		draw_circle(c, r, Color(0.16, 0.36, 0.14, 0.9))
+		draw_arc(c, r, 0.0, TAU, 64, Color(1, 1, 1, 0.5), 2.0, true)
+		draw_arc(c, r * 27.4 / 65.0, 0.0, TAU, 48, Color(1, 1, 1, 0.22), 1.5, true)
+		draw_rect(Rect2(c.x - 4, c.y - 14, 8, 28), Color(0.85, 0.75, 0.55, 0.8))
+		var counts := {4: 0, 6: 0}
+		for s: Array in shots:
+			var runs := int(s[2])
+			if runs <= 0:
+				continue
+			# Straight is up the card; the off side is to the right (for a right-hander).
+			var a := deg_to_rad(float(s[0]))
+			var d := clampf(float(s[1]) / 65.0, 0.08, 1.12) * r
+			var end := c + Vector2(sin(a), -cos(a)) * d
+			var col := Color(1, 1, 1, 0.75)
+			if runs == 4:
+				col = Hud.BLUE
+			elif runs == 6:
+				col = Hud.GOLD
+			draw_line(c, end, col, 3.0 if runs >= 4 else 2.0, true)
+			if counts.has(runs):
+				counts[runs] += 1
+		var f := Hud.font("semi")
+		draw_string(f, Vector2(c.x + r + 14, c.y - 6), "%d sixes" % counts[6], HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Hud.GOLD)
+		draw_string(f, Vector2(c.x + r + 14, c.y + 20), "%d fours" % counts[4], HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Hud.BLUE)

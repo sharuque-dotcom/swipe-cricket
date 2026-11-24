@@ -61,6 +61,8 @@ var free_hit := false            # the next legal ball is a free hit (after a no
 var surge_rule := false
 var surge_at := -1               # the over the surge starts (0-based), -1 not called
 var daily := {}                  # Chase of the Day: {date, n}
+var wagon: Array = []            # every shot played live: [angle_deg, metres, runs]
+var best_shot := {}              # the shot of the innings: {name, metres, runs, batter}
 
 ## `opts` (all optional): attack (five names), pitch, night, blue_name, red_name,
 ## target_scale (how strong Red's batting is), lineup (Blue's eleven names), career.
@@ -203,6 +205,7 @@ func note_shot(angle_deg: float, distance: float, scored: int) -> void:
 	var bat: Dictionary = batters[striker]
 	var shots: Array = bat.get("shots", [])
 	shots.append([snappedf(angle_deg, 0.1), snappedf(distance, 0.1), scored])
+	wagon.append([snappedf(angle_deg, 0.1), snappedf(distance, 0.1), scored])
 	if shots.size() > Fielding.SHOT_MEMORY:
 		shots.pop_front()
 	bat["shots"] = shots
@@ -366,7 +369,8 @@ func to_dict() -> Dictionary:
 		"machine_state": str(machine_state), "seed": seed_value, "attack": attack, "pitch": pitch,
 		"night": night, "blue_name": blue_name, "red_name": red_name, "career": career, "timing": timing,
 		"fow": fow, "red_card": red_card, "red_bowling": red_bowling, "skills": skills, "kits": kits, "ipl": ipl, "chase_scale": chase_scale, "red_names": red_names,
-		"extras": extras, "free_hit": free_hit, "surge_rule": surge_rule, "surge_at": surge_at, "daily": daily}
+		"extras": extras, "free_hit": free_hit, "surge_rule": surge_rule, "surge_at": surge_at, "daily": daily,
+		"wagon": wagon, "best_shot": best_shot}
 
 static func from_dict(d: Dictionary) -> MatchState:
 	var m := MatchState.new()
@@ -411,6 +415,8 @@ static func from_dict(d: Dictionary) -> MatchState:
 	m.surge_rule = bool(d.get("surge_rule", false))
 	m.surge_at = int(d.get("surge_at", -1))
 	m.daily = d.get("daily", {})
+	m.wagon = d.get("wagon", [])
+	m.best_shot = d.get("best_shot", {})
 	if m.daily.has("n"):
 		m.daily.n = int(m.daily.n)
 	var t: Dictionary = d.get("timing", {})

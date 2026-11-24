@@ -752,6 +752,10 @@ func _score_hit() -> void:
 	var who := _surname(match_state.striker_name())
 	if r != null and pending != null and pending.exit != null:
 		match_state.note_shot(rad_to_deg(atan2(pending.exit.vel.x, -pending.exit.vel.z)), r.distance, 0 if r.caught else r.runs)
+		var bs := match_state.best_shot
+		if not r.caught and (r.runs > int(bs.get("runs", -1)) or (r.runs == int(bs.get("runs", -1)) and r.distance > float(bs.get("metres", 0.0)))):
+			match_state.best_shot = {"name": pending.shot_name, "metres": snappedf(r.distance, 1.0), "runs": r.runs,
+				"batter": _surname(match_state.striker_name())}
 	if r != null and r.caught and _saved():
 		_caught_call = {"big": "NOT OUT!", "line": "Caught, but it's a %s" % ("no-ball" if _nb else "free hit"), "sub": pending.shot_name}
 		var wait0 := maxf(0.0, _take_at - ball.time) if _take_at >= 0.0 else 0.0
@@ -1284,8 +1288,8 @@ func _show_result() -> void:
 		"accent": Hud.GOLD if won else (Hud.TEXT if tied else Hud.RED),
 		"rows": [["BLUE", "%d/%d  (%s ov)" % [m.runs, m.wickets, m.overs_text()], Hud.BLUE],
 			["RED", "%d/%d  (20 ov)" % [m.red_total, m.red_wickets], Hud.RED],
-			["Top scorer", m.top_blue()], ["Best bowler", m.best_bowler()]],
-		"prompt": "Tap for a new match"})
+			["Top scorer", m.top_blue()], ["Best bowler", m.best_bowler()]] + _shot_row(),
+		"wagon": m.wagon, "prompt": "Tap for a new match"})
 
 ## The end of a career match: it goes into the career, and the card says what it did for you.
 func _career_result(won: bool, tied: bool, text: String, by: int) -> void:
@@ -1389,13 +1393,20 @@ func _ipl_result() -> void:
 			notes.append("Knocked out")
 	hud.show_card({"kicker": "%s  ·  %s" % [str(_league().TITLE), (("MATCH %d" % int(m.ipl.n)) if str(m.ipl.stage) == "League" else str(m.ipl.stage).to_upper())],
 		"title": "WON" if won else "LOST", "sub": str(res.get("text", m.result_text())),
-		"accent": Hud.GOLD if won else Hud.RED, "rows": rows, "notes": notes, "prompt": "Tap for the season"})
+		"accent": Hud.GOLD if won else Hud.RED, "rows": rows + _shot_row(), "wagon": m.wagon, "notes": notes, "prompt": "Tap for the season"})
+
+## "Shot of the innings" for a result card, if there was one worth naming.
+func _shot_row() -> Array:
+	var b := match_state.best_shot
+	if b.is_empty() or int(b.runs) < 4:
+		return []
+	return [["Shot of the innings", "%s  ·  %s  %d m" % [str(b.batter), str(b.name), int(b.metres)], Hud.GOLD if int(b.runs) == 6 else Hud.BLUE]]
 
 ## Chase of the Day: the streak, and a reason to come back tomorrow.
 func _daily_result(won: bool) -> void:
 	var m := match_state
 	var first := not Daily.played_today()
-	var st := Daily.record(str(m.daily.date), won)
+	var st := Daily.stats() if autoplay else Daily.record(str(m.daily.date), won)
 	if won:
 		_fireworks(4)
 	var notes := []
@@ -1410,8 +1421,8 @@ func _daily_result(won: bool) -> void:
 			if won else "needed %d more" % m.need()],
 		"accent": Hud.GOLD if won else Hud.RED,
 		"rows": [["Streak", str(st.streak), Hud.GREEN], ["Best streak", str(st.best)], ["Won", "%d of %d" % [int(st.won), int(st.played)]],
-			["Top scorer", m.top_blue()]],
-		"notes": notes, "prompt": "Tap for the menu"})
+			["Top scorer", m.top_blue()]] + _shot_row(),
+		"wagon": m.wagon, "notes": notes, "prompt": "Tap for the menu"})
 
 ## The league this match belongs to (IplData or BblData).
 func _league() -> GDScript:
