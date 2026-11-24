@@ -27,6 +27,8 @@ var _held := false
 var _held_for := 0.0
 var _throws := false
 var _throw_from := Vector3.ZERO
+## Where a throw comes in: over the top of the stumps, on the keeper's side.
+const THROW_TO := Vector3(0.0, 1.05, 0.35)
 var _throw_time := 0.0
 var _take_pos := Vector3.ZERO   # where the ball was when it reached the fielder
 var _wound := false
@@ -557,14 +559,18 @@ func _show_ball() -> void:
 		if _throws and not _stumping and _taker != null and not _wound and _held_for >= release - THROW_WINDUP:
 			# Wind up: the arm comes over with the ball in the hand, and lets go at `release`.
 			_wound = true
-			_taker.throw_to(fielders[0].hands_global())
-			fielders[0].take_throw(_taker.hands_global())
+			_taker.throw_to(THROW_TO)
+			# The keeper comes up to the stumps and is there, hands ready, as it arrives.
+			var from := _taker.hands_global()
+			var flight := maxf(from.distance_to(THROW_TO) / Fielding.THROW_SPEED, 0.25)
+			var dir := Vector3(THROW_TO.x - from.x, 0.0, THROW_TO.z - from.z)
+			fielders[0].go(THROW_TO, THROW_WINDUP + flight, true, THROW_TO.y, dir.normalized() if dir.length() > 0.1 else Vector3(0, 0, 1))
 		if _wound and _held_for < release:
 			at = _taker.throw_hand()
 		if _throws and _held_for >= release:
 			var keeper := fielders[0]
 			# In to the keeper, or (a stumping) the keeper's underarm flick at the stumps.
-			var to := Vector3(0.0, 0.45, 0.0) if _stumping else keeper.hands_global()
+			var to := Vector3(0.0, 0.45, 0.0) if _stumping else (THROW_TO if _wound else keeper.hands_global())
 			if _throw_time <= 0.0:
 				_throw_from = _taker.throw_hand() if _wound else _taker.hands_global()
 				_throw_time = maxf(_throw_from.distance_to(to) / Fielding.THROW_SPEED, 0.25)
@@ -575,6 +581,8 @@ func _show_ball() -> void:
 			var u := clampf((_held_for - (0.15 if _stumping else HOLD_BEFORE_THROW)) / _throw_time, 0.0, 1.0)
 			var arc := _throw_from.distance_to(to) * (0.02 if _stumping else 0.07)
 			at = _throw_from.lerp(to, u) + Vector3.UP * (4.0 * arc * u * (1.0 - u))
+			if u >= 1.0 and not _stumping:
+				at = keeper.hands_global()   # in the gloves, and stays there
 			if _stumping and u >= 1.0 and not _stumps_broken:
 				_stumps_broken = true
 				stadium.batter_stumps.shatter(0.0, 12.0)
