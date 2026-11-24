@@ -34,6 +34,7 @@ var _take_pos := Vector3.ZERO   # where the ball was when it reached the fielder
 var _wound := false
 var _caught_call := {}   # the CAUGHT call, waiting for the ball to reach the hands
 var _nb := false         # this ball is a no-ball
+var pyro: Pyro
 var _forced := 0
 var _free := false       # this ball is a free hit     # the throwing action has started; the ball is in the throwing hand
 var _hold_pos := Vector3.ZERO
@@ -199,6 +200,9 @@ func _build_fielders() -> void:
 		add_child(f)
 		f.build(RED_KIT, Color(1, 1, 1), i == 0)
 		fielders.append(f)
+	pyro = Pyro.new()
+	add_child(pyro)
+	pyro.build()
 	umpire = Umpire.new()
 	umpire.position = Vector3(0.0, 0.0, Pitch.BOWLER_STUMPS_Z - 1.8)
 	umpire.rotation.y = PI
@@ -326,6 +330,10 @@ func _next_ball() -> void:
 	_reset_fielders()
 	_nb = d.no_ball
 	hud.set_compact(false)
+	# A tight finish: the crowd starts clapping along.
+	var m2 := match_state
+	if m2.over_index() >= 15 and m2.balls_left() > 0 and m2.need() <= m2.balls_left() * 2 and m2.balls % 2 == 0:
+		sfx.play("chant", -9.0)
 	_free = match_state.free_hit
 	umpire.give(Umpire.Sig.FREE_HIT if _free else Umpire.Sig.NONE)
 	_refresh_hud()
@@ -666,6 +674,11 @@ func _score_hit() -> void:
 		timer = clampf(wait + HOLD_BEFORE_THROW + throw + 0.5, 1.6, 3.4)
 	_record(summary.runs, "")
 	if summary.boundary:
+		if summary.six:
+			pyro.flames(ball.pos)
+			sfx.play("flame", -4.0)
+		get_tree().create_timer(0.7).timeout.connect(func(): sfx.play("sting", -6.0))
+		Input.vibrate_handheld(80 if summary.six else 40, 1.0)
 		_big_moment("SIX" if summary.six else "FOUR", "%s  ·  %s  ·  %d m" % [who, pending.shot_name, int(round(summary.distance))],
 			Hud.GOLD if summary.six else Hud.BLUE, Umpire.Sig.SIX if summary.six else Umpire.Sig.FOUR, 0.55)
 
@@ -884,12 +897,15 @@ func _start_scene(sc: Dictionary) -> void:
 			batter.celebrate("milestone")
 			stadium.crowd_material.set_shader_parameter("excite", 1.0)
 			sfx.play("cheer", -3.0)
+			_fireworks(3 if sc.mark == 50 else 6)
 			hud.show_banner("FIFTY" if sc.mark == 50 else "HUNDRED", "%s  %d (%d)  ·  %d fours  ·  %d sixes" % [
 				b.name, b.runs, b.balls, b.fours, b.sixes], Hud.GOLD)
 		"win":
 			batter.celebrate("win")
 			stadium.crowd_material.set_shader_parameter("excite", 1.0)
 			sfx.play("cheer")
+			_fireworks(6)
+			get_tree().create_timer(0.4).timeout.connect(func(): sfx.play("sting", -4.0))
 			hud.show_banner("%s WIN" % m.blue_name, m.result_text().substr(m.result_text().find(" by ") + 1).capitalize(), Hud.BLUE)
 		"scorecard":
 			hud.show_scorecard(m.scorecard())
@@ -1210,6 +1226,16 @@ func _apply_kits() -> void:
 			f.figure.recolour(red[0], red[1])
 	if bowler.figure.kit != red[0]:
 		bowler.figure.recolour(red[0], red[1])
+
+## Fireworks in our colours, each with its bang.
+func _fireworks(n: int) -> void:
+	var c := _team_colour("blue", BLUE_KIT)
+	var trim := Color(1.0, 0.8, 0.15)
+	if match_state.kits.has("blue"):
+		trim = _colour(match_state.kits.blue[1])
+	pyro.fireworks([c.lightened(0.2), trim, Color(1, 1, 1)], n)
+	for k in n:
+		get_tree().create_timer(0.25 * k + 0.1).timeout.connect(func(): sfx.play("firework", -6.0 - 2.0 * (k % 3), 0.9 + 0.08 * (k % 3)))
 
 func _team_colour(side: String, fallback: Color) -> Color:
 	var k := match_state.kits

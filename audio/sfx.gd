@@ -27,6 +27,37 @@ func _ready() -> void:
 		return _crowd() * env * 0.9))
 	_add("groan", _make(1.2, func(t: float) -> float:
 		return _crowd() * minf(t / 0.15, 1.0) * exp(-t * 3.0) * 0.5))
+	# A flame cannon: a roar that swells and dies.
+	_add("flame", _make(1.4, func(t: float) -> float:
+		var env := minf(t / 0.08, 1.0) * exp(-maxf(t - 0.5, 0.0) * 3.0)
+		_lp = lerpf(_lp, _noise(), 0.08)
+		return _lp * env * 2.4))
+	# Fireworks: a crack, then crackle.
+	_add("firework", _make(1.2, func(t: float) -> float:
+		var s := _noise() * exp(-t * 30.0)
+		if t > 0.15 and _rng.randf() < 0.02:
+			s += _noise() * 0.6
+		return s * 0.55 + _noise() * exp(-maxf(t - 0.15, 0.0) * 4.0) * 0.08 * float(t > 0.15)))
+	# The DJ sting after a boundary: a quick rising square-wave riff with a kick.
+	_add("sting", _make(1.15, func(t: float) -> float:
+		var notes := [0.0, 0.0, 3.0, 5.0, 7.0, 12.0]
+		var step := mini(int(t / 0.13), notes.size() - 1)
+		var f := 220.0 * pow(2.0, float(notes[step]) / 12.0)
+		var tt := fmod(t, 0.13)
+		var lead := signf(sin(TAU * f * t)) * exp(-tt * 9.0) * 0.18
+		var kick := sin(TAU * (120.0 - 300.0 * tt) * tt) * exp(-tt * 25.0) * 0.5 * float(step % 2 == 0)
+		return (lead + kick) * minf((1.15 - t) * 6.0, 1.0)))
+	# The crowd clapping in rhythm: clap, clap, clap-clap-clap.
+	_add("chant", _make(2.0, func(t: float) -> float:
+		var hits := [0.0, 0.4, 0.8, 1.0, 1.2]
+		var s := 0.0
+		for h in hits:
+			if t >= h:
+				s += _noise() * exp(-(t - h) * 40.0)
+		return s * 0.35 + _crowd() * 0.12))
+	# The crack of a middled shot, on top of the bat sound.
+	_add("crack", _make(0.12, func(t: float) -> float:
+		return (_noise() * exp(-t * 140.0) + sin(TAU * 2400.0 * t) * exp(-t * 90.0) * 0.6) * 0.7))
 	# The no-ball horn: two short blasts.
 	_add("horn", _make(0.75, func(t: float) -> float:
 		var on := 1.0 if (t < 0.28 or (t > 0.4 and t < 0.7)) else 0.0

@@ -56,6 +56,7 @@ var hit_view_cap := 4.2      # longest we follow a hit before scoring it
 var fx: Fx
 var time_scale_base := 1.0   # normal speed; a replay lowers it
 var _slowmo_until := 0       # real-time msec: brief slow motion as a big hit leaves the bat
+var _hitstop_until := 0      # real-time msec: the world all but stops for a beat at a middled hit
 var _swing_where := Vector3.ZERO
 var _swing_angle := 0.0
 var _swing_style := ""
@@ -392,7 +393,13 @@ func _batter_skill() -> BatterSkill:
 	return null
 
 func _process(delta: float) -> void:
-	Engine.time_scale = 0.18 if Time.get_ticks_msec() < _slowmo_until else time_scale_base
+	var now_ms := Time.get_ticks_msec()
+	if now_ms < _hitstop_until:
+		Engine.time_scale = 0.04
+	elif now_ms < _slowmo_until:
+		Engine.time_scale = 0.18
+	else:
+		Engine.time_scale = time_scale_base
 	delta = minf(delta, 0.05)
 	frame_usec = Time.get_ticks_usec()
 	if _touch >= 0.0:
@@ -511,16 +518,22 @@ func _connect() -> void:
 	var speed := pending.exit.vel.length()
 	if pending.outcome == ShotResolver.Outcome.EDGE:
 		sfx.play("edge")
+		Input.vibrate_handheld(14, 0.35)
 	else:
 		sfx.play("bat", lerpf(-8.0, 0.0, clampf(speed / 38.0, 0.0, 1.0)), lerpf(0.85, 1.1, pending.quality))
 		_shake = 0.05 * clampf(speed / 40.0, 0.0, 1.0) * pending.quality
+		# Out of the middle: a crack on top, a hard buzz, and a hit-stop beat.
+		if pending.quality > 0.85:
+			sfx.play("crack", -3.0)
+			_hitstop_until = Time.get_ticks_msec() + 55
+			_shake *= 1.6
+		Input.vibrate_handheld(int(lerpf(18.0, 55.0, pending.quality)), lerpf(0.35, 1.0, pending.quality))
 	fx.impact(pending.contact_pos, clampf(speed / 36.0, 0.0, 1.0) * pending.quality)
 	# The big ones hang in the air for a beat.
 	if pending.outcome == ShotResolver.Outcome.HIT and speed > 29.0 and pending.quality > 0.8:
 		_slowmo_until = Time.get_ticks_msec() + 130
 	hud.show_timing(pending.timing_n, pending.timing_label(), pending.timing_ms, pending.perfect_n, pending.clean_n)
 	hud.show_shot(pending.shot_name, "%d km/h off the bat" % int(round(speed * 3.6)))
-	Input.vibrate_handheld(int(lerpf(15.0, 45.0, pending.quality)))
 	_fov_to = 50.0
 
 ## Where a hit ends up. The nets have an empty field; a match puts fielders in.
