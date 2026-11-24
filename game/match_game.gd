@@ -35,6 +35,8 @@ var _wound := false
 var _caught_call := {}   # the CAUGHT call, waiting for the ball to reach the hands
 var _nb := false         # this ball is a no-ball
 var pyro: Pyro
+var _view := ""          # the broadcast camera's current shot after a hit: "", "aerial", "side"
+var _view_pos := Vector3.ZERO
 var _forced := 0
 var _free := false       # this ball is a free hit     # the throwing action has started; the ball is in the throwing hand
 var _hold_pos := Vector3.ZERO
@@ -329,6 +331,7 @@ func _next_ball() -> void:
 		moved.clear()
 	_reset_fielders()
 	_nb = d.no_ball
+	_view = ""
 	hud.set_compact(false)
 	# A tight finish: the crowd starts clapping along.
 	var m2 := match_state
@@ -525,7 +528,48 @@ func _update_camera(delta: float) -> void:
 		cam.position = umpire.position + Vector3(0.9, 1.55, 5.2)
 		cam.look_at(umpire.position + Vector3(0.0, 1.42, 0.0))
 		return
+	if _broadcast_cut(delta):
+		return
 	super._update_camera(delta)
+
+## After the hit, cut like a TV director: the chase camera for the first moment, then a
+## high wide shot for anything going a long way, or side-on to the fielder for a ball they
+## will stop. Cuts are hard (no swoop), and each shot holds its position and pans.
+func _broadcast_cut(delta: float) -> bool:
+	var live := state == State.HIT or (state == State.DEAD and pending != null and pending.exit != null)
+	if not live or ball == null or summary == null:
+		_view = ""
+		return false
+	var r := summary as Fielding.Result
+	var since := clock - hit_clock
+	if _view == "" and since > 0.45 and r != null:
+		var landing := r.end_pos if r.end_pos != Vector3.ZERO else ball.pos
+		if r.boundary or r.distance > 45.0:
+			_view = "aerial"
+			# High above the square, off to the side of the ball's path, looking down on it.
+			var path := Vector3(landing.x, 0.0, landing.z)
+			var side := Vector3(path.z, 0.0, -path.x).normalized() if path.length() > 1.0 else Vector3.RIGHT
+			_view_pos = path * 0.45 + side * 26.0 + Vector3(0.0, 30.0, 0.0)
+		elif _taker != null and _taker != fielders[0]:
+			_view = "side"
+			var to := _taker.position - Vector3(pending.contact_pos.x, 0.0, pending.contact_pos.z)
+			var side2 := Vector3(to.z, 0.0, -to.x).normalized() if to.length() > 1.0 else Vector3.RIGHT
+			_view_pos = _taker.position + side2 * 10.0 - to.normalized() * 3.0 + Vector3(0.0, 2.6, 0.0)
+		else:
+			_view = "chase"
+		if _view != "chase":
+			_cam_pos = _view_pos
+			_cam_pos_to = _view_pos
+			_cam_look = Vector3(ball.pos.x, maxf(ball.pos.y, 0.6), ball.pos.z)
+	if _view == "" or _view == "chase":
+		return false
+	var target := Vector3(ball.pos.x, maxf(ball.pos.y, 0.6), ball.pos.z)
+	_cam_look = _cam_look.lerp(target, 1.0 - exp(-delta * 10.0))
+	cam.fov = lerpf(cam.fov, 46.0 if _view == "aerial" else 38.0, 1.0 - exp(-delta * 4.0))
+	cam.position = _view_pos
+	if cam.position.distance_squared_to(_cam_look) > 0.01:
+		cam.look_at(_cam_look)
+	return true
 
 func _evaluate_hit(exit: BallPhysics.State) -> NetsScoring.Summary:
 	var r := Fielding.evaluate(exit, field)
