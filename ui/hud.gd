@@ -106,6 +106,7 @@ func _ready() -> void:
 	_top.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	_top.offset_top = _safe_top
 	_top.offset_bottom = _safe_top + 330
+	# (The match bar is shorter; set_match moves the pieces below it up.)
 	_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(_top)
 
@@ -265,6 +266,7 @@ func _ready() -> void:
 	_replay.add_theme_stylebox_override("panel", rsb)
 	_replay.offset_left = MARGIN + 4
 	_replay.offset_top = _safe_top + 336
+
 	_replay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_replay.visible = false
 	_replay.add_child(_text("REPLAY", "bold", 28, TEXT))
@@ -457,8 +459,44 @@ func set_match(m: MatchState) -> void:
 	_top.figures = "%d-%d" % [b.wkts, b.runs]
 	_top.figures_overs = "(%s)" % m.overs_text(b.balls)
 	_top.over = m.this_over.duplicate()
+	var kit: Variant = m.kits.get("blue", [])
+	_top.team_color = _kit_colour(kit, BLUE)
+	_top.team_ink = NAVY if _top.team_color.get_luminance() > 0.6 else TEXT
+	if m.finished() or m.balls == 0:
+		_top.chase_need = -1
+	else:
+		_top.chase_need = m.need()
+		_top.chase_balls = m.balls_left()
+	_top.rrr = "" if m.finished() or m.balls == 0 else "RRR %.1f" % m.required_rate()
 	_top.queue_redraw()
-	_toast.offset_top = _safe_top + 332
+	_toast.offset_top = _safe_top + 168
+	_replay.offset_top = _safe_top + 172
+	_field_card.offset_top = _safe_top + 168
+
+static func _kit_colour(v: Variant, fallback: Color) -> Color:
+	if v is Array and (v as Array).size() > 0:
+		var c: Variant = (v as Array)[0]
+		if c is Color:
+			return c
+		if c is Array and (c as Array).size() >= 3:
+			return Color(float(c[0]), float(c[1]), float(c[2]))
+		if c is String:
+			return Color.from_string(str(c), fallback)
+	return fallback
+
+var _expand_tween: Tween
+
+## Fold the bar to its score row while the ball is live; open it between balls.
+func set_compact(on: bool) -> void:
+	var to := 0.0 if on else 1.0
+	if absf(_top.expand - to) < 0.01:
+		return
+	if _expand_tween:
+		_expand_tween.kill()
+	_expand_tween = create_tween()
+	_expand_tween.tween_method(func(v: float):
+		_top.expand = v
+		_top.queue_redraw(), _top.expand, to, 0.25)
 
 func set_delivery(text: String) -> void:
 	_toast_text.text = text
@@ -1265,13 +1303,144 @@ class TopBar:
 	var figures := ""
 	var figures_overs := ""
 	var over: Array = []
+	var team_color := Hud.BLUE
+	var team_ink := Hud.TEXT
+	var chase_need := -1
+	var chase_balls := -1
+	var rrr := ""
+	## 1 = the full bar; 0 = only the score row (while the ball is live).
+	var expand := 1.0
 
 	func _t(weight: String, s: String, x: float, y: float, sz: int, c: Color, align: int = HORIZONTAL_ALIGNMENT_LEFT, w: float = -1.0) -> float:
 		var f := Hud.font(weight)
 		draw_string(f, Vector2(x, y), s, align, w, sz, c)
 		return f.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x
 
+	## A slanted block: a parallelogram leaning right, like a TV score bug.
+	func _slab(x: float, y: float, w: float, h: float, c: Color, slant: float = 16.0) -> void:
+		draw_colored_polygon(PackedVector2Array([Vector2(x + slant, y), Vector2(x + w + slant, y), Vector2(x + w, y + h),
+			Vector2(x, y + h)]), c)
+
+	func _wid(weight: String, s: String, sz: int) -> float:
+		return Hud.font(weight).get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, sz).x
+
+	## The match bar: one slim row of score, overs and the chase, and (between balls) a
+	## thinner row with the batters, the bowler and this over.
+	func _draw_match() -> void:
+		var w := size.x
+		var m := Hud.MARGIN
+		var y := 10.0
+		var h := 74.0
+		var navy := Color(Hud.NAVY.r, Hud.NAVY.g, Hud.NAVY.b, 0.97)
+		# Team block in the team's colour.
+		var name := title.to_upper()
+		var tw := _wid("bold", name, 30) + 44.0
+		_slab(m, y, tw, h, team_color)
+		_t("bold", name, m + 22, y + 48, 30, team_ink)
+		# Score.
+		var sx := m + tw + 4
+		var sw := _wid("bold", score, 58) + 40.0
+		_slab(sx, y, sw, h, navy)
+		_t("bold", score, sx + 22, y + 58, 58, Hud.TEXT)
+		# Overs.
+		var ox := sx + sw + 4
+		var ow := _wid("bold", right_big, 40) + _wid("semi", "OV", 20) + 46.0
+		_slab(ox, y, ow, h, Color(Hud.NAVY_HI.r, Hud.NAVY_HI.g, Hud.NAVY_HI.b, 0.97))
+		var ovw := _t("bold", right_big, ox + 22, y + 52, 40, Hud.GOLD)
+		_t("semi", "OV", ox + 26 + ovw, y + 50, 20, Hud.DIM)
+		# The chase, in big numbers: runs needed off balls left.
+		var cx := ox + ow + 4
+		var cw := w - m - cx - 16.0
+		if cw > 60.0:
+			_slab(cx, y, cw, h, navy)
+			if chase_need >= 0:
+				var x := cx + 24
+				_t("semi", "NEED", x, y + 28, 17, Hud.DIM)
+				var nw := _t("bold", str(chase_need), x, y + 62, 40, Hud.GOLD)
+				_t("semi", "OFF", x + nw + 8, y + 60, 18, Hud.DIM)
+				var bw2 := _t("bold", str(chase_balls), x + nw + 44, y + 62, 40, Hud.TEXT)
+				if rrr != "":
+					_t("semi", rrr, x + nw + 44 + bw2 + 14, y + 60, 18, Hud.DIM)
+			else:
+				_t("bold", line, cx + 24, y + 50, 28, Hud.GOLD)
+		# Thin progress line under the bar.
+		draw_rect(Rect2(m + 16, y + h, w - m * 2.0 - 16, 4), Color(1, 1, 1, 0.12))
+		if progress > 0.0:
+			draw_rect(Rect2(m + 16, y + h, (w - m * 2.0 - 16) * progress, 4), Hud.GOLD)
+		if expand <= 0.01:
+			return
+		# Second row: batters, bowler, this over.
+		var a := expand
+		var y2 := y + h + 8
+		var h2 := 58.0
+		var row := Color(Hud.NAVY.r, Hud.NAVY.g, Hud.NAVY.b, 0.93 * a)
+		var half := floorf((w - m * 2.0 - 30.0) * 0.52)
+		_slab(m, y2, half, h2, row, 12.0)
+		var ink := Color(Hud.TEXT.r, Hud.TEXT.g, Hud.TEXT.b, a)
+		var dim := Color(Hud.DIM.r, Hud.DIM.g, Hud.DIM.b, a)
+		var gold := Color(Hud.GOLD.r, Hud.GOLD.g, Hud.GOLD.b, a)
+		var x := m + 20
+		draw_colored_polygon(PackedVector2Array([Vector2(x, y2 + 13), Vector2(x + 11, y2 + 21), Vector2(x, y2 + 29)]), gold)
+		var nm := _surname(str(striker[0])).to_upper()
+		var nw2 := _t("bold", nm, x + 18, y2 + 32, 26, ink)
+		_t("bold", "%d" % striker[1], x + 28 + nw2, y2 + 32, 26, gold)
+		_t("med", "(%d)" % striker[2], x + 34 + nw2 + _wid("bold", "%d" % striker[1], 26), y2 + 32, 20, dim)
+		# Role and ability under the name, small.
+		_t("semi", role.to_upper(), x + 18, y2 + 51, 15, dim)
+		_mini_pips(x + 26 + _wid("semi", role.to_upper(), 15), y2 + 42, power, timing, a)
+		var pn := _surname(str(partner[0])).to_upper()
+		_t("med", "%s %d (%d)" % [pn, partner[1], partner[2]], x, y2 + 32, 20, dim, HORIZONTAL_ALIGNMENT_RIGHT, half - 30)
+		# Bowler and the over.
+		var bx := m + half + 10
+		var bwid := w - m - bx - 14
+		_slab(bx, y2, bwid, h2, row, 12.0)
+		var x2 := bx + 22
+		draw_circle(Vector2(x2 + 5, y2 + 22), 6.0, Color(Hud.RED.r, Hud.RED.g, Hud.RED.b, a))
+		var bn := _surname(bowler).to_upper()
+		var bnw := _t("bold", bn, x2 + 16, y2 + 30, 24, ink)
+		_t("semi", "%s %s" % [figures, figures_overs], x2 + 24 + bnw, y2 + 30, 19, dim)
+		var n := maxi(over.size(), 6)
+		var step := minf(28.0, (bwid - 40) / float(n))
+		for i in n:
+			var centre := Vector2(x2 + 12 + step * i, y2 + 45)
+			var r := 10.0
+			if i >= over.size():
+				draw_arc(centre, r - 1.0, 0.0, TAU, 20, Color(1, 1, 1, 0.16 * a), 2.0, true)
+				continue
+			var mark := str(over[i])
+			var fill := Color(1, 1, 1, 0.16)
+			var tink := Hud.TEXT
+			if mark == "4":
+				fill = Hud.BLUE
+			elif mark == "6":
+				fill = Hud.GOLD
+				tink = Hud.NAVY
+			elif mark == "W":
+				fill = Hud.RED
+			elif mark.begins_with("wd") or mark.begins_with("nb"):
+				fill = Color(0.55, 0.45, 0.9)
+			fill.a *= a
+			tink.a = a
+			draw_circle(centre, r, fill)
+			if mark == "·":
+				draw_circle(centre, 2.5, dim)
+			else:
+				_t("bold", mark, centre.x - r - 6, centre.y + 6, 15 if mark.length() > 1 else 16, tink, HORIZONTAL_ALIGNMENT_CENTER, r * 2.0 + 12)
+
+	func _surname(n: String) -> String:
+		var parts := n.split(" ")
+		return parts[parts.size() - 1]
+
+	func _mini_pips(x: float, y: float, p: int, t: int, a: float) -> void:
+		for i in 5:
+			draw_rect(Rect2(x + i * 9, y, 7, 5), Color(Hud.GOLD.r, Hud.GOLD.g, Hud.GOLD.b, a) if i < p else Color(1, 1, 1, 0.16 * a))
+		for i in 5:
+			draw_rect(Rect2(x + 52 + i * 9, y, 7, 5), Color(Hud.GREEN.r, Hud.GREEN.g, Hud.GREEN.b, a) if i < t else Color(1, 1, 1, 0.16 * a))
+
 	func _draw() -> void:
+		if match_mode:
+			_draw_match()
+			return
 		var w := size.x
 		var m := Hud.MARGIN
 		# Score card.

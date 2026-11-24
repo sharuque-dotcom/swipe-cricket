@@ -325,6 +325,7 @@ func _next_ball() -> void:
 		moved.clear()
 	_reset_fielders()
 	_nb = d.no_ball
+	hud.set_compact(false)
 	_free = match_state.free_hit
 	umpire.give(Umpire.Sig.FREE_HIT if _free else Umpire.Sig.NONE)
 	_refresh_hud()
@@ -377,6 +378,7 @@ func _style_info(p: Dictionary) -> Dictionary:
 ## The player has seen the field: the bowler sets off.
 func _release() -> void:
 	super._release()
+	hud.set_compact(true)
 	if _nb and not _replaying:
 		# Overstepped: the call comes as it is bowled; the ball is still live.
 		sfx.play("horn", -5.0)
@@ -416,6 +418,11 @@ func _refresh_hud() -> void:
 ## Queue the umpire's signal, the full-screen call and the replay for a big moment.
 ## `lead` is how long the live view runs on first.
 func _big_moment(text: String, sub: String, c: Color, sig: Umpire.Sig, lead: float) -> void:
+	# The sting is in the team's colours: ours for a boundary, theirs for a wicket.
+	if text in ["FOUR", "SIX"]:
+		c = _team_colour("blue", c)
+	elif text == "OUT":
+		c = _team_colour("red", c)
 	_event = {"text": text, "sub": sub, "color": c, "sig": sig, "lead": lead}
 	_event_t = 0.0
 	_cut = false
@@ -1203,6 +1210,12 @@ func _apply_kits() -> void:
 			f.figure.recolour(red[0], red[1])
 	if bowler.figure.kit != red[0]:
 		bowler.figure.recolour(red[0], red[1])
+
+func _team_colour(side: String, fallback: Color) -> Color:
+	var k := match_state.kits
+	if not k.has(side):
+		return BLUE_KIT.lightened(0.15) if side == "blue" else RED_KIT
+	return _colour(k[side][0])
 
 static func _colour(v: Variant) -> Color:
 	if v is Color:
