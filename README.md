@@ -23,6 +23,12 @@ Swipe to play a shot. Lift your finger just before the ball arrives.
 - Direction of the swipe is where the ball goes: up is straight, right is the off side.
 - Speed of the swipe is power.
 - A long swipe lofts the ball; a short one keeps it on the ground.
+- While the bowler runs in: slide a finger sideways to move across the crease (right to
+  the off side, left to make room on leg), or hold or tap to dance down the pitch. Move
+  early and the bowler can follow you.
+- Bowlers stray: wides (off and leg side, judged from where you stood) and front-foot
+  no-balls are called, and a no-ball gives you a free hit.
+- Matches under lights are played at twilight; the menu has a Day matches only switch.
 
 ## IPL 2026 (personal use)
 
