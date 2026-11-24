@@ -19,6 +19,7 @@ func build(kit: Color, trim: Color) -> void:
 	figure.gloves = true
 	figure.whites = true
 	figure.gear = "helmet"
+	figure.helmet_colour = Locker.helmet_colour()
 	add_child(figure)
 	figure.build()
 	# Bat carried in the right hand, toe forward and down.

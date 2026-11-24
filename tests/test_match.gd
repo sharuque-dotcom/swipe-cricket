@@ -262,3 +262,12 @@ func test_bowlers_remember_how_they_got_you() -> void:
 	Rivals.record(name, 0, "lbw b Bowler")
 	check(Rivals.plan(name) == "straight", "out bowled and lbw: he attacks the stumps")
 	check(Rivals.line(name).begins_with("RIVAL"), "the card calls him a rival: %s" % Rivals.line(name))
+
+func test_a_fifty_unlocks_the_gold_sticker() -> void:
+	var m := MatchState.create(5)
+	m.batters[0].runs = 64
+	var already := Locker.unlocked("fifty")
+	var got := Locker.check_match(m)
+	check(Locker.unlocked("fifty"), "a fifty unlocks the first achievement")
+	check(already or got.has("fifty"), "and says so the first time")
+	check(not Locker.check_match(m).has("fifty"), "only once")

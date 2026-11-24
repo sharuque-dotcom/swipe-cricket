@@ -13,6 +13,7 @@ func build(kit: Color, trim: Color) -> void:
 	figure.trim = trim
 	figure.pads = true
 	figure.helmet = true
+	figure.helmet_colour = Locker.helmet_colour()
 	add_child(figure)
 	figure.build()
 	bat = Bat.new()

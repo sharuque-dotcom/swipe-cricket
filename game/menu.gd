@@ -23,16 +23,25 @@ func _ready() -> void:
 	shade.color = Color(0.02, 0.05, 0.12, 0.70)
 	add_child(shade)
 
+	# The list scrolls: there are more ways to play than fit on one screen.
+	var scroll := ScrollContainer.new()
+	scroll.set_anchors_preset(Control.PRESET_FULL_RECT)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	add_child(scroll)
+	var margin := MarginContainer.new()
+	margin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	margin.add_theme_constant_override("margin_left", 44)
+	margin.add_theme_constant_override("margin_right", 44)
+	margin.add_theme_constant_override("margin_top", 90)
+	margin.add_theme_constant_override("margin_bottom", 60)
+	scroll.add_child(margin)
 	var col := VBoxContainer.new()
-	col.set_anchors_preset(Control.PRESET_FULL_RECT)
-	col.offset_left = 44
-	col.offset_right = -44
-	col.alignment = BoxContainer.ALIGNMENT_CENTER
-	col.add_theme_constant_override("separation", 16)
-	add_child(col)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_theme_constant_override("separation", 14)
+	margin.add_child(col)
 	col.add_child(_label("QUICK-FIRE T20", "semi", 28, Hud.GOLD))
-	var title := _label("SWIPE\nCRICKET", "bold", 150, Hud.TEXT)
-	title.add_theme_constant_override("line_spacing", -44)
+	var title := _label("SWIPE\nCRICKET", "bold", 130, Hud.TEXT)
+	title.add_theme_constant_override("line_spacing", -40)
 	title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
 	title.add_theme_constant_override("shadow_offset_y", 8)
 	title.add_theme_constant_override("shadow_outline_size", 16)
@@ -44,7 +53,7 @@ func _ready() -> void:
 	col.add_child(rule)
 	col.add_child(_label("Every ball is real physics. Timing is everything.", "med", 28, Hud.DIM))
 	var gap := Control.new()
-	gap.custom_minimum_size = Vector2(0, 48)
+	gap.custom_minimum_size = Vector2(0, 24)
 	col.add_child(gap)
 	var saved := _saved_summary()
 	if saved != "":
@@ -81,6 +90,12 @@ func _ready() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://match.json"))
 		_go("match")))
 	col.add_child(_button("NETS", "12 balls to find your timing", Hud.GOLD, func(): _go("nets")))
+	var got := 0
+	for id in Locker.ACHIEVEMENTS:
+		if Locker.unlocked(id):
+			got += 1
+	col.add_child(_button("LOCKER", "%d of %d achievements  ·  bat stickers, helmets, celebrations" % [got, Locker.ACHIEVEMENTS.size()],
+		Hud.GREEN, func(): _go("locker")))
 	# Lights: twilight matches under lights, or every match in the day.
 	var day := Button.new()
 	day.focus_mode = Control.FOCUS_NONE
@@ -116,7 +131,7 @@ func _label(text: String, weight: String, size: int, c: Color) -> Label:
 ## A card button: accent bar, title, one line of description, chevron.
 func _button(text: String, sub: String, accent: Color, on_press: Callable) -> Button:
 	var b := Button.new()
-	b.custom_minimum_size = Vector2(0, 124)
+	b.custom_minimum_size = Vector2(0, 112)
 	for s in ["normal", "hover", "pressed", "focus"]:
 		var sb := Hud.card_box(28, 0.86, Color(1, 1, 1, 0.14))
 		if s == "pressed":
@@ -125,15 +140,15 @@ func _button(text: String, sub: String, accent: Color, on_press: Callable) -> Bu
 		b.add_theme_stylebox_override(s, sb)
 	var bar := ColorRect.new()
 	bar.color = accent
-	bar.position = Vector2(26, 34)
+	bar.position = Vector2(26, 28)
 	bar.size = Vector2(8, 56)
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.add_child(bar)
 	var t := _label(text, "bold", 46, Hud.TEXT)
-	t.position = Vector2(54, 16)
+	t.position = Vector2(54, 10)
 	b.add_child(t)
 	var d := _label(sub, "med", 26, Hud.DIM)
-	d.position = Vector2(54, 70)
+	d.position = Vector2(54, 64)
 	b.add_child(d)
 	var ch := _label("›", "bold", 64, accent)
 	ch.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
@@ -154,7 +169,8 @@ func _saved_summary() -> String:
 	return "BLUE %d/%d  ·  %s ov  ·  need %d" % [m.runs, m.wickets, m.overs_text(), m.need()]
 
 func _go(which: String) -> void:
-	var path: String = {"match": "res://game/match.tscn", "career": "res://game/career.tscn", "ipl": "res://game/ipl.tscn"}.get(which, "res://game/nets.tscn")
+	var path: String = {"match": "res://game/match.tscn", "career": "res://game/career.tscn", "ipl": "res://game/ipl.tscn",
+		"locker": "res://game/locker.tscn"}.get(which, "res://game/nets.tscn")
 	get_tree().call_deferred("change_scene_to_file", path)
 
 func _notification(what: int) -> void:

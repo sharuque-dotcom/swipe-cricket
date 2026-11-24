@@ -46,6 +46,7 @@ func build(kit: Color, trim: Color) -> void:
 	figure.trim = trim
 	figure.pads = true
 	figure.helmet = true
+	figure.helmet_colour = Locker.helmet_colour()
 	add_child(figure)
 	figure.build()
 	bat = Bat.new()
@@ -149,6 +150,9 @@ func _steps(delta: float) -> float:
 ## "milestone": bat raised to the crowd. "win": both arms up, jumping.
 func celebrate(kind: String) -> void:
 	_cele = kind
+	var style := Locker.equipped("celebration")
+	if style != "" and kind == "milestone":
+		_cele = style
 	figure.set_face("joy", 3.5)
 	_go(Phase.CELEBRATE)
 
@@ -381,4 +385,17 @@ func _celebrate_pose() -> void:
 	p.hand_l = Vector3(-0.62, 1.70 + jump, -1.15).lerp(Vector3(-0.62, 1.98 + jump, -1.25), 0.5 + 0.5 * sin(_t * 5.0))
 	if _cele == "win":
 		p.hand_l = Vector3(-0.60, 2.0 + jump, -1.2)
+	elif _cele == "roar":
+		# Both fists pumped, leaning back, bat tucked under an arm.
+		var pump := 0.5 + 0.5 * sin(_t * 9.0)
+		p.lean = -0.22 * e
+		p.hips.y = 0.86
+		bat.place(Vector3(-0.05, 1.05, -0.95), Vector3(0.2, -0.3, 0.93).normalized(), Vector3(1, 0, 0))
+		p.hand_r = Vector3(-0.10, 1.20 + 0.25 * pump, -0.70).lerp(p.hand_r, 1.0 - e)
+		p.hand_l = Vector3(-0.62, 1.20 + 0.25 * pump, -1.20)
+	elif _cele == "point":
+		# Bat raised in one hand, the other pointing straight up.
+		p.hand_l = Vector3(-0.45, 2.15, -1.05).lerp(p.hand_l, 1.0 - e)
+		p.head_yaw = deg_to_rad(-10.0)
+		p.lean = -0.14 * e
 	figure.apply(p)

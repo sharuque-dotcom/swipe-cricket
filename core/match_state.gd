@@ -63,6 +63,8 @@ var surge_at := -1               # the over the surge starts (0-based), -1 not c
 var daily := {}                  # Chase of the Day: {date, n}
 var wagon: Array = []            # every shot played live: [angle_deg, metres, runs]
 var best_shot := {}              # the shot of the innings: {name, metres, runs, batter}
+var hard_chase := false          # needed 12 an over or more at some point in the last five
+var surge_runs := 0              # runs scored in the Power Surge
 
 ## `opts` (all optional): attack (five names), pitch, night, blue_name, red_name,
 ## target_scale (how strong Red's batting is), lineup (Blue's eleven names), career.
@@ -272,6 +274,8 @@ func record(scored: int, how_out: String = "") -> Dictionary:
 			striker = nxt
 			ev.new_batter = batters[striker].name
 	else:
+		if surge_at >= 0 and over_index() >= surge_at and over_index() < surge_at + 2:
+			surge_runs += scored
 		runs += scored
 		bat.runs += scored
 		bowling[bi].runs += scored
@@ -282,6 +286,8 @@ func record(scored: int, how_out: String = "") -> Dictionary:
 		this_over.append("·" if scored == 0 else str(scored))
 		if scored % 2 == 1:
 			_swap()
+	if over_index() >= 15 and not finished() and required_rate() >= 12.0:
+		hard_chase = true
 	if finished():
 		ev.finished = true
 		return ev
@@ -370,7 +376,7 @@ func to_dict() -> Dictionary:
 		"night": night, "blue_name": blue_name, "red_name": red_name, "career": career, "timing": timing,
 		"fow": fow, "red_card": red_card, "red_bowling": red_bowling, "skills": skills, "kits": kits, "ipl": ipl, "chase_scale": chase_scale, "red_names": red_names,
 		"extras": extras, "free_hit": free_hit, "surge_rule": surge_rule, "surge_at": surge_at, "daily": daily,
-		"wagon": wagon, "best_shot": best_shot}
+		"wagon": wagon, "best_shot": best_shot, "hard_chase": hard_chase, "surge_runs": surge_runs}
 
 static func from_dict(d: Dictionary) -> MatchState:
 	var m := MatchState.new()
@@ -417,6 +423,8 @@ static func from_dict(d: Dictionary) -> MatchState:
 	m.daily = d.get("daily", {})
 	m.wagon = d.get("wagon", [])
 	m.best_shot = d.get("best_shot", {})
+	m.hard_chase = bool(d.get("hard_chase", false))
+	m.surge_runs = int(d.get("surge_runs", 0))
 	if m.daily.has("n"):
 		m.daily.n = int(m.daily.n)
 	var t: Dictionary = d.get("timing", {})

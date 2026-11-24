@@ -24,6 +24,17 @@ func build() -> void:
 	handle.mesh = hm
 	handle.material_override = Figure.facet(Color(0.12, 0.2, 0.55))
 	add_child(handle)
+	# A sticker on the back of the blade, if one is equipped in the locker.
+	var sc := Locker.bat_colour()
+	if sc.a > 0.0:
+		for k in 2:
+			var st := MeshInstance3D.new()
+			var sm := BoxMesh.new()
+			sm.size = Vector3(0.112, 0.08 if k == 0 else 0.03, 0.047)
+			st.mesh = sm
+			st.position.y = -(HANDLE * 0.5 + 0.12 + k * 0.1)
+			st.material_override = Figure.facet(sc)
+			add_child(st)
 
 ## `dir` points from the handle to the toe; `face` is the way the flat side looks.
 func place(grip: Vector3, dir: Vector3, face: Vector3) -> void:

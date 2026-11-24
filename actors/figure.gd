@@ -43,6 +43,7 @@ var trim := Color(1.0, 0.8, 0.1)
 var skin := Color(0.72, 0.5, 0.36)
 var pads := false
 var helmet := false
+var helmet_colour := Color(0, 0, 0, 0)   # from the locker; transparent: the team's colour
 var hat := false                 # wide-brimmed hat instead of a cap
 var trousers := Color(0, 0, 0, 0)  # leave transparent to match the kit
 
@@ -183,7 +184,7 @@ func _build_face() -> void:
 	_grin.scale = Vector3(1.0, 0.85, 0.35)
 
 func _build_cap() -> void:
-	var col := kit.darkened(0.45) if helmet else kit
+	var col := (helmet_colour if helmet_colour.a > 0.0 else kit.darkened(0.45)) if helmet else kit
 	var cap := MeshInstance3D.new()
 	var cm := SphereMesh.new()
 	cm.radius = 0.152 if helmet else 0.142

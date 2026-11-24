@@ -909,6 +909,8 @@ func _record(scored: int, how_out: String, quiet: bool = false) -> void:
 		_record_extra("nb", scored)
 		return
 	if not quiet and match_state.player_on_strike() and not autoplay:
+		if scored == 6 and int(Rivals.get_record(match_state.bowler_name()).get("outs", 0)) >= 2:
+			_announce_unlock("rival_six")
 		Rivals.record(match_state.bowler_name(), scored, how_out)
 	var ev := match_state.record(scored, how_out)
 	if quiet:
@@ -1289,7 +1291,7 @@ func _show_result() -> void:
 		"rows": [["BLUE", "%d/%d  (%s ov)" % [m.runs, m.wickets, m.overs_text()], Hud.BLUE],
 			["RED", "%d/%d  (20 ov)" % [m.red_total, m.red_wickets], Hud.RED],
 			["Top scorer", m.top_blue()], ["Best bowler", m.best_bowler()]] + _shot_row(),
-		"wagon": m.wagon, "prompt": "Tap for a new match"})
+		"wagon": m.wagon, "notes": _unlock_notes(), "prompt": "Tap for a new match"})
 
 ## The end of a career match: it goes into the career, and the card says what it did for you.
 func _career_result(won: bool, tied: bool, text: String, by: int) -> void:
@@ -1326,7 +1328,7 @@ func _career_result(won: bool, tied: bool, text: String, by: int) -> void:
 		"title": "WON" if won else ("TIED" if tied else "LOST"),
 		"sub": "" if tied else text.substr(by + 1),
 		"accent": Hud.GOLD if won else (Hud.TEXT if tied else Hud.RED),
-		"rows": rows, "notes": notes, "prompt": "Tap for your career"})
+		"rows": rows, "notes": notes + _unlock_notes(), "prompt": "Tap for your career"})
 
 ## Team colours for this match: our batters, their fielders and bowler.
 func _apply_kits() -> void:
@@ -1387,13 +1389,31 @@ func _ipl_result() -> void:
 				int(season.table()[season.position() - 1].pts)])
 		elif won and str(m.ipl.stage) == "Final":
 			notes.append("%s CHAMPIONS!" % str(_league().TITLE))
+			if not autoplay and Locker.unlock("champions"):
+				notes.append("UNLOCKED: %s" % Locker.reward("champions"))
 		elif won:
 			notes.append("Through to the next round")
 		elif str(m.ipl.stage) != str(_league().STAGES[0]):
 			notes.append("Knocked out")
+	notes.append_array(_unlock_notes())
 	hud.show_card({"kicker": "%s  ·  %s" % [str(_league().TITLE), (("MATCH %d" % int(m.ipl.n)) if str(m.ipl.stage) == "League" else str(m.ipl.stage).to_upper())],
 		"title": "WON" if won else "LOST", "sub": str(res.get("text", m.result_text())),
 		"accent": Hud.GOLD if won else Hud.RED, "rows": rows + _shot_row(), "wagon": m.wagon, "notes": notes, "prompt": "Tap for the season"})
+
+## A new achievement: say so, with what it unlocked.
+func _announce_unlock(id: String) -> void:
+	if autoplay or not Locker.unlock(id):
+		return
+	hud.flash_tag("UNLOCKED  ·  %s" % Locker.reward(id).to_upper(), Hud.GREEN, 2.2)
+
+## Achievements this finished match earned, as lines for the result card.
+func _unlock_notes(extra: Array = []) -> Array:
+	if autoplay:
+		return []
+	var out := []
+	for id in Locker.check_match(match_state) + extra:
+		out.append("UNLOCKED: %s  (%s)" % [Locker.reward(id), Locker.title(id)])
+	return out
 
 ## "Shot of the innings" for a result card, if there was one worth naming.
 func _shot_row() -> Array:
@@ -1409,7 +1429,10 @@ func _daily_result(won: bool) -> void:
 	var st := Daily.stats() if autoplay else Daily.record(str(m.daily.date), won)
 	if won:
 		_fireworks(4)
-	var notes := []
+	var extra := []
+	if not autoplay and int(st.streak) >= 3 and Locker.unlock("daily3"):
+		extra.append("daily3")
+	var notes := _unlock_notes(extra)
 	if not first:
 		notes.append("A replay: your streak is as it was.")
 	elif won:

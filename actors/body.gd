@@ -17,6 +17,7 @@ var whites := false                # cream trousers (batters)
 var gear := "cap"                  # "cap", "helmet", "hat" or ""
 var pads := false
 var gloves := false
+var helmet_colour := Color(0, 0, 0, 0)
 
 var model: Node3D
 var skeleton: Skeleton3D
@@ -79,7 +80,7 @@ func _paint() -> void:
 		"pants": white if whites else (trousers if trousers.a > 0.0 else kit.darkened(0.12)),
 		"white": white, "pad_roll": white.darkened(0.06), "shoe": Color(0.95, 0.95, 0.95),
 		"dark": Color(0.07, 0.06, 0.08), "eyewhite": Color(0.98, 0.98, 0.96), "mouth": Color(0.45, 0.07, 0.1),
-		"helmet": kit.darkened(0.45), "steel": Color(0.78, 0.79, 0.83), "hat": Color(0.96, 0.95, 0.90)}
+		"helmet": helmet_colour if helmet_colour.a > 0.0 else kit.darkened(0.45), "steel": Color(0.78, 0.79, 0.83), "hat": Color(0.96, 0.95, 0.90)}
 	for key in _meshes:
 		var mi: MeshInstance3D = _meshes[key]
 		for s in mi.mesh.get_surface_count():
