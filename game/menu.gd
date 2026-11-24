@@ -49,9 +49,16 @@ func _ready() -> void:
 	var saved := _saved_summary()
 	if saved != "":
 		col.add_child(_button("RESUME MATCH", saved, Hud.GREEN, func(): _go("match")))
-	var ipl := Ipl.load_saved()
+	var bbl := Ipl.load_saved("bbl")
+	col.add_child(_button("BBL|16", ("%s  ·  %s" % [BblData.team(bbl.team).name, "season over" if bbl.season_over() else "%d played" % bbl.table()[bbl.position() - 1].p])
+		if bbl != null else "The Big Bash: eight clubs, real squads, Power Surge, finals", Color(1.0, 0.5, 0.0), func():
+			Ipl.current = "bbl"
+			_go("ipl")))
+	var ipl := Ipl.load_saved("ipl")
 	col.add_child(_button("IPL 2026", ("%s  ·  %s" % [IplData.team(ipl.team).name, "season over" if ipl.season_over() else "%d played" % ipl.table()[ipl.position() - 1].p])
-		if ipl != null else "Real squads, real fixtures, the points table", Hud.GOLD, func(): _go("ipl")))
+		if ipl != null else "Real squads, real fixtures, the points table", Hud.GOLD, func():
+			Ipl.current = "ipl"
+			_go("ipl")))
 	var car := Career.load_saved()
 	col.add_child(_button("CAREER", ("%s  ·  %s  ·  season %d" % [car.name, car.tier_info().name.capitalize(), car.season]) if car != null
 		else "Club cricket to international", Hud.GREEN.darkened(0.1), func(): _go("career")))

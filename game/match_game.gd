@@ -88,6 +88,13 @@ func _new_session() -> void:
 	if not resumed:
 		var sd := int(Time.get_unix_time_from_system()) if not autoplay else 21
 		var opts := {}
+		for arg in OS.get_cmdline_user_args():
+			if arg.begins_with("--league="):
+				# Test hook: play your next match of a league season (made up if none).
+				Ipl.current = arg.trim_prefix("--league=")
+				Ipl.active = true
+				if Ipl.load_saved() == null:
+					Ipl.create("BH" if Ipl.current == "bbl" else "MI").save()
 		if "--career" in OS.get_cmdline_user_args():
 			Career.active = true
 			if Career.load_saved() == null:
@@ -101,9 +108,9 @@ func _new_session() -> void:
 				Ipl.active = false
 			else:
 				season.save()
-				IplData.register_bowlers()
+				season.data().register_bowlers()
 				opts = season.match_opts(fx, season.team)
-				sd = Ipl.seed_for(fx)
+				sd = Ipl.seed_for(fx, season.lg)
 		if Career.active and not Ipl.active:
 			var car := Career.load_saved()
 			if car == null:
@@ -133,7 +140,9 @@ func _new_session() -> void:
 	Career.active = not match_state.career.is_empty()
 	Ipl.active = not match_state.ipl.is_empty() and match_state.career.is_empty()
 	if not match_state.ipl.is_empty():
-		IplData.register_bowlers()
+		if Ipl.active:
+			Ipl.current = str(match_state.ipl.get("lg", "ipl"))
+		_league().register_bowlers()
 	_apply_kits()
 	_asked = match_state.player_out() and str(match_state.career.get("mode", "own")) == "team"
 	_waiting_choice = false
@@ -171,9 +180,9 @@ func _new_session() -> void:
 			"prompt": "Tap to carry on"})
 	elif Ipl.active:
 		var ip: Dictionary = m.ipl
-		var opp: Dictionary = IplData.team(m.red_name)
-		hud.show_card({"kicker": "IPL 2026  ·  %s  ·  %s" % [("MATCH %d" % int(ip.n)) if str(ip.stage) == "League" else str(ip.stage).to_upper(), str(ip.ground).to_upper()],
-			"title": "CHASE %d" % m.target, "sub": "%s v %s" % [IplData.team(m.blue_name).name, opp.name],
+		var opp: Dictionary = _league().team(m.red_name)
+		hud.show_card({"kicker": "%s  ·  %s  ·  %s" % [str(_league().TITLE), ("MATCH %d" % int(ip.n)) if str(ip.stage) == "League" else str(ip.stage).to_upper(), str(ip.ground).to_upper()],
+			"title": "CHASE %d" % m.target, "sub": "%s v %s" % [_league().team(m.blue_name).name, opp.name],
 			"rows": [["%s made" % m.red_name, "%d/%d" % [m.red_total, m.red_wickets], Hud.RED], ["Their top score", m.red_top],
 				["Pitch", str(Conditions.info(m.pitch).name).capitalize(), Hud.GOLD],
 				["Played", "Under lights" if m.night else "Afternoon"]],
@@ -1311,14 +1320,18 @@ func _ipl_result() -> void:
 			notes.append("%s are %s in the table with %d points" % [m.blue_name, _ordinal(season.position()),
 				int(season.table()[season.position() - 1].pts)])
 		elif won and str(m.ipl.stage) == "Final":
-			notes.append("IPL 2026 CHAMPIONS!")
+			notes.append("%s CHAMPIONS!" % str(_league().TITLE))
 		elif won:
 			notes.append("Through to the next round")
-		elif str(m.ipl.stage) != "Qualifier 1":
+		elif str(m.ipl.stage) != str(_league().STAGES[0]):
 			notes.append("Knocked out")
-	hud.show_card({"kicker": "IPL 2026  ·  %s" % (("MATCH %d" % int(m.ipl.n)) if str(m.ipl.stage) == "League" else str(m.ipl.stage).to_upper()),
+	hud.show_card({"kicker": "%s  ·  %s" % [str(_league().TITLE), (("MATCH %d" % int(m.ipl.n)) if str(m.ipl.stage) == "League" else str(m.ipl.stage).to_upper())],
 		"title": "WON" if won else "LOST", "sub": str(res.get("text", m.result_text())),
 		"accent": Hud.GOLD if won else Hud.RED, "rows": rows, "notes": notes, "prompt": "Tap for the season"})
+
+## The league this match belongs to (IplData or BblData).
+func _league() -> GDScript:
+	return Ipl.data_for(str(match_state.ipl.get("lg", "ipl")))
 
 static func _ordinal(n: int) -> String:
 	var suffix := "th"

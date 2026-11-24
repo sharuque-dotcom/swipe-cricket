@@ -12,6 +12,14 @@ extends RefCounted
 ##   lf left-arm fast, lfm left-arm medium swing, ob off spin, lb leg spin (wrist),
 ##   sla left-arm orthodox, lws left-arm wrist spin.
 
+const TITLE := "IPL 2026"
+const LEAGUE_NAME := "Indian Premier League"
+const PICK_TEXT := "Play the 2026 season with a real squad: all 70 league fixtures in order, the points table, and the play-offs. You bat; every other match is played out for you."
+const SQUAD_NOTE := "Squads as of March 2026. Batting orders and ratings are the game's own."
+const STAGES := ["Qualifier 1", "Eliminator", "Qualifier 2", "Final"]
+## Modern IPL scoring: first innings around 185-190.
+const PAR := 1.24
+
 const TEAMS := {
 	"CSK": {"name": "Chennai Super Kings", "kit": Color(0.98, 0.80, 0.08), "trim": Color(0.10, 0.22, 0.60),
 		"home": "Chennai", "captain": "Ruturaj Gaikwad",
@@ -255,6 +263,15 @@ static func register_bowlers() -> void:
 			if p.has("swing"):
 				p.swing = float(p.swing) * (0.8 + 0.3 * q)
 			BowlerProfile.EXTRA[str(a[0])] = p
+
+## Day games: the first of two matches on the same date.
+static func day_game(f: Dictionary) -> bool:
+	if str(f.stage) != "League":
+		return false
+	for g: Array in FIXTURES:
+		if str(g[1]) == str(f.date) and int(g[0]) == int(f.n) + 1:
+			return true
+	return false
 
 static func team(code: String) -> Dictionary:
 	return TEAMS[code]

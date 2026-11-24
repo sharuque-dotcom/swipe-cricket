@@ -1,14 +1,19 @@
 class_name IplPage
 extends "res://game/career_page.gd"
-## IPL 2026: pick a franchise, then the season hub: next match, points table, fixtures and
+## A league season (IPL 2026 or BBL|16): pick a franchise, then the season hub: next match, points table, fixtures and
 ## results, and the squad. Built from the career page's pieces.
 
 const MONTHS := ["", "JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
 
 var season: Ipl
 var _reset_armed := false
+## The league this page is about: IplData or BblData (Ipl.current says which).
+var D: GDScript = IplData
 
 func _build() -> void:
+	if "--bbl" in OS.get_cmdline_user_args():
+		Ipl.current = "bbl"
+	D = Ipl.data_for(Ipl.current)
 	season = Ipl.load_saved()
 	for c in _col.get_children():
 		_col.remove_child(c)
@@ -18,7 +23,7 @@ func _build() -> void:
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(spacer)
-	head.add_child(_label("IPL 2026", "bold", 44, Hud.GOLD))
+	head.add_child(_label(str(D.TITLE), "bold", 44, Hud.GOLD))
 	_col.add_child(head)
 	if season == null:
 		_build_pick()
@@ -31,7 +36,7 @@ static func date_text(d: String) -> String:
 
 func _team_bar(code: String, h: float = 56.0) -> ColorRect:
 	var r := ColorRect.new()
-	r.color = IplData.team(code).kit
+	r.color = D.team(code).kit
 	r.custom_minimum_size = Vector2(10, h)
 	r.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	return r
@@ -42,9 +47,9 @@ func _build_pick() -> void:
 	var card := _card()
 	var v := card.get_child(0) as VBoxContainer
 	v.add_child(_label("PICK YOUR TEAM", "bold", 52, Hud.TEXT))
-	v.add_child(_label("Play the 2026 season with a real squad: all 70 league fixtures in order, the points table, and the play-offs. You bat; every other match is played out for you.", "med", 24, Hud.DIM, true))
-	for code in IplData.ORDER:
-		var t := IplData.team(code)
+	v.add_child(_label(str(D.PICK_TEXT), "med", 24, Hud.DIM, true))
+	for code in D.ORDER:
+		var t: Dictionary = D.team(code)
 		var b := Button.new()
 		b.custom_minimum_size = Vector2(0, 92)
 		for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
@@ -56,7 +61,8 @@ func _build_pick() -> void:
 		n.position = Vector2(30, 8)
 		n.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		b.add_child(n)
-		var s := _label("%s  ·  captain %s  ·  home %s" % [code, t.captain, t.home], "med", 22, Hud.DIM)
+		var cap := ("  ·  captain %s" % t.captain) if str(t.captain) != "" else ""
+		var s := _label("%s%s  ·  home %s" % [code, cap, t.home], "med", 22, Hud.DIM)
 		s.position = Vector2(30, 52)
 		s.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		b.add_child(s)
@@ -66,14 +72,14 @@ func _build_pick() -> void:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(MATCH_SAVE))
 			_build())
 		v.add_child(b)
-	v.add_child(_label("Squads as of March 2026. Batting orders and ratings are the game's own.", "med", 20, Hud.DIM, true))
+	v.add_child(_label(str(D.SQUAD_NOTE), "med", 20, Hud.DIM, true))
 	_col.add_child(card)
 
 # ---- The season ----------------------------------------------------------------------
 
 func _build_season() -> void:
 	var s := season
-	var me := IplData.team(s.team)
+	var me: Dictionary = D.team(s.team)
 	var rows := s.table()
 	var pos := s.position()
 	var mine: Dictionary = rows[pos - 1]
@@ -88,7 +94,7 @@ func _build_season() -> void:
 	names.add_theme_constant_override("separation", -4)
 	names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	names.add_child(_label(str(me.name).to_upper(), "bold", 44, Hud.TEXT))
-	names.add_child(_label("Captain %s  ·  %s" % [me.captain, me.home], "med", 24, Hud.DIM))
+	names.add_child(_label(("Captain %s  ·  %s" % [me.captain, me.home]) if str(me.captain) != "" else str(me.home), "med", 24, Hud.DIM))
 	h.add_child(names)
 	v.add_child(h)
 	v.add_child(_tiles([["PLAYED", str(mine.p)], ["WON", str(mine.w)], ["POINTS", str(mine.pts)], ["POSITION", _ord(pos)]], 4))
@@ -121,12 +127,12 @@ func _build_season() -> void:
 		var vs := HBoxContainer.new()
 		vs.add_theme_constant_override("separation", 14)
 		vs.add_child(_team_bar(opp, 52))
-		vs.add_child(_label("v %s" % IplData.team(opp).name, "bold", 40, Hud.TEXT))
+		vs.add_child(_label("v %s" % D.team(opp).name, "bold", 40, Hud.TEXT))
 		v.add_child(vs)
-		v.add_child(_row("Pitch", str(Conditions.info(str(IplData.GROUNDS.get(str(f.ground), "good"))).name).capitalize()))
-		v.add_child(_row("Played", "Afternoon" if Ipl.is_day(f) else "Under lights"))
+		v.add_child(_row("Pitch", str(Conditions.info(str(D.GROUNDS.get(str(f.ground), "good"))).name).capitalize()))
+		v.add_child(_row("Played", "Afternoon" if season.is_day(f) else "Under lights"))
 		var atk := []
-		for n in IplData.attack_names(opp):
+		for n in D.attack_names(opp):
 			atk.append(str(n).split(" ")[-1])
 		v.add_child(_row("Their attack", ", ".join(atk)))
 		v.add_child(_label("You chase. Matches before this one are played out when you start.", "med", 21, Hud.DIM, true))
@@ -143,6 +149,7 @@ func _build_season() -> void:
 	v = tab.get_child(0) as VBoxContainer
 	v.add_child(_label("POINTS TABLE", "semi", 22, Hud.GOLD))
 	var tv := PointsTable.new()
+	tv.league = D
 	tv.rows = rows
 	tv.me = s.team
 	tv.custom_minimum_size = Vector2(0, 34 + 46 * rows.size())
@@ -196,8 +203,8 @@ func _build_season() -> void:
 		i += 1
 	v.add_child(_label("BOWLING", "semi", 22, Hud.GOLD))
 	for a: Array in me.attack:
-		v.add_child(_row(str(a[0]), str(IplData.STYLES[str(a[1])].label).capitalize()))
-	var xi := IplData.xi_names(s.team)
+		v.add_child(_row(str(a[0]), str(D.STYLES[str(a[1])].label).capitalize()))
+	var xi: Array = D.xi_names(s.team)
 	var bench := []
 	for n: String in me.squad:
 		if not xi.has(n.trim_suffix("*")):

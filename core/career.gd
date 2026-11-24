@@ -219,7 +219,7 @@ func _ipl_opts(advance: bool) -> Dictionary:
 	if ipl_team == "":
 		return {}
 	IplData.register_bowlers()
-	var s := Ipl.from_dict(ipl_season) if not ipl_season.is_empty() else Ipl.create(ipl_team)
+	var s := Ipl.from_dict(ipl_season) if not ipl_season.is_empty() else Ipl.create(ipl_team, "ipl")
 	var f := s.next_mine() if advance else s.peek_mine()
 	if advance:
 		ipl_season = s.to_dict()
@@ -267,7 +267,7 @@ static func _ipl_played(s: Ipl) -> int:
 
 func ipl() -> Ipl:
 	if ipl_season.is_empty():
-		return Ipl.create(ipl_team) if ipl_team != "" else null
+		return Ipl.create(ipl_team, "ipl") if ipl_team != "" else null
 	return Ipl.from_dict(ipl_season)
 
 ## The franchises that want you: the three whose XI is weakest where you bat.
@@ -283,7 +283,7 @@ func make_auction() -> void:
 
 func join(code: String) -> void:
 	ipl_team = code
-	ipl_season = Ipl.create(code).to_dict()
+	ipl_season = Ipl.create(code, "ipl").to_dict()
 	auction = []
 	match_no = 0
 	season_wins = 0
@@ -365,7 +365,7 @@ func _record_ipl(m: MatchState, report: Dictionary) -> void:
 		report.season_over = true
 		report.season_line = history[0]
 		report.champions = s.champion
-		ipl_season = Ipl.create(ipl_team).to_dict()
+		ipl_season = Ipl.create(ipl_team, "ipl").to_dict()
 		_new_season()
 	else:
 		ipl_season = s.to_dict()

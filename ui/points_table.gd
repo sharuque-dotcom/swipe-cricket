@@ -3,6 +3,7 @@ extends Control
 ## The points table, drawn: position, team, played, won, lost, net run rate, points.
 var rows: Array = []
 var me := ""
+var league: GDScript = IplData   # IplData or BblData, for the team colours
 
 func _draw() -> void:
 	var w := size.x
@@ -17,7 +18,7 @@ func _draw() -> void:
 		var r: Dictionary = rows[i]
 		if str(r.code) == me:
 			draw_style_box(Hud.pill_box(Color(Hud.GOLD.r, Hud.GOLD.g, Hud.GOLD.b, 0.16), 10), Rect2(0, y, w, 44))
-		var t := IplData.team(str(r.code))
+		var t: Dictionary = league.team(str(r.code))
 		draw_string(Hud.font("bold"), Vector2(10, y + 31), str(i + 1), HORIZONTAL_ALIGNMENT_LEFT, -1, 24, Hud.DIM)
 		draw_rect(Rect2(44, y + 10, 8, 26), t.kit)
 		draw_string(Hud.font("bold"), Vector2(62, y + 31), str(r.code), HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Hud.TEXT)
