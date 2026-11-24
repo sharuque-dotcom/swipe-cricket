@@ -183,3 +183,17 @@ func test_placement_and_footwork_matter() -> void:
 	check(outs[1] < outs[0], "good placement: a mistimed drive goes nearer the aim (%.1f° v %.1f°)" % [rad_to_deg(outs[1]), rad_to_deg(outs[0])])
 	check(BatterSkill.new("x", 1, 1, 0.6, 1.0).reach_scale() > BatterSkill.new("x", 1, 1, 0.6, 0.2).reach_scale(), "footwork reaches further")
 	check(is_equal_approx(BatterSkill.new().scatter(), 1.0) and is_equal_approx(BatterSkill.new().reach_scale(), 1.0), "the defaults change nothing")
+
+func test_moving_across_brings_wide_ball_into_reach() -> void:
+	var d := Delivery.new()
+	d.speed = 34.0
+	d.target = Vector3(1.1, 0, -6.5)
+	var b := d.solve()
+	var w := ShotResolver.hit_window(b)
+	var sw := ShotResolver.Swing.new()
+	sw.angle = deg_to_rad(70.0)
+	sw.power = 0.8
+	sw.contact_time = w.t_mid
+	check(ShotResolver.resolve(b, sw).reason == "Out of reach", "a very wide one is out of reach from the crease")
+	sw.shuffle = Tuning.SHUFFLE_OFF
+	check(ShotResolver.resolve(b, sw).outcome == ShotResolver.Outcome.HIT, "moving across brings it into reach")

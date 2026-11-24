@@ -34,6 +34,11 @@ var _charge_dur := 0.5
 var _charge_t := -1.0
 var _back_t := -1.0       # walking back into the crease
 var _back_from := 0.0
+# Moving across the crease (this node moves sideways).
+var _side_from := 0.0
+var _side_to := 0.0
+var _side_dur := 0.3
+var _side_t := -1.0
 
 func build(kit: Color, trim: Color) -> void:
 	figure = Figure.new()
@@ -83,6 +88,8 @@ func reset() -> void:
 		_back_t = 0.0
 		_back_from = position.z
 	_charge_t = -1.0
+	if absf(position.x) > 0.01:
+		shuffle(0.0, 0.6)
 
 ## Dance down the pitch `dist` metres over `seconds`.
 func charge(dist: float, seconds: float) -> void:
@@ -90,6 +97,18 @@ func charge(dist: float, seconds: float) -> void:
 	_charge_dur = maxf(seconds, 0.1)
 	_charge_t = 0.0
 	_back_t = -1.0
+
+## Shuffle `dx` metres across the crease (+ toward the off side) over `seconds`.
+func shuffle(dx: float, seconds: float) -> void:
+	_side_from = position.x
+	_side_to = dx
+	_side_dur = maxf(seconds, 0.1)
+	_side_t = 0.0
+
+## Stand `dx` across straight away (replays).
+func set_shuffle(dx: float) -> void:
+	position.x = dx
+	_side_t = -1.0
 
 ## Put the batter `dist` down the pitch straight away (replays).
 func set_advance(dist: float) -> void:
@@ -100,6 +119,15 @@ func set_advance(dist: float) -> void:
 ## How far into the charge or the walk back they are, for stepping feet: 0..1 and the
 ## phase of the steps.
 func _steps(delta: float) -> float:
+	var side_steps := 0.0
+	if _side_t >= 0.0:
+		_side_t += delta
+		var v := clampf(_side_t / _side_dur, 0.0, 1.0)
+		position.x = lerpf(_side_from, _side_to, smoothstep(0.0, 1.0, v))
+		side_steps = v * 2.0
+		if v >= 1.0:
+			_side_t = -1.0
+			side_steps = 0.0
 	if _charge_t >= 0.0:
 		_charge_t += delta
 		var u := clampf(_charge_t / _charge_dur, 0.0, 1.0)
@@ -116,7 +144,7 @@ func _steps(delta: float) -> float:
 			_back_t = -1.0
 			return 0.0
 		return u * 3.0
-	return 0.0
+	return side_steps
 
 ## "milestone": bat raised to the crowd. "win": both arms up, jumping.
 func celebrate(kind: String) -> void:

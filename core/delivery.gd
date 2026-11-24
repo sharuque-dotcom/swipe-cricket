@@ -12,6 +12,7 @@ var spin := Vector3.ZERO
 var label := "Pace"
 var action := ""                        # the bowler's action, for the animation (BowlerProfile)
 var left_arm := false
+var no_ball := false                    # overstepped: called as it is bowled
 
 func speed_kmh() -> float:
 	return speed * 3.6

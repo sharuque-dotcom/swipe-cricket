@@ -6,6 +6,8 @@ signal swipe_started
 signal swipe_moved(points: PackedVector2Array)
 ## angle: 0 = straight up the screen, positive = to the right. power and loft are 0..1.
 signal swiped(angle: float, power: float, loft: float)
+## The finger lifted (whether or not it made a swipe).
+signal swipe_ended
 
 var enabled := true
 ## On-screen buttons: a touch that starts on one of these is not a swipe.
@@ -46,6 +48,7 @@ func _blocked(at: Vector2) -> bool:
 
 func _finish() -> void:
 	_active = false
+	swipe_ended.emit()
 	var h := float(get_viewport().get_visible_rect().size.y)
 	var v := _points[_points.size() - 1] - _points[0]
 	var len_frac := v.length() / h

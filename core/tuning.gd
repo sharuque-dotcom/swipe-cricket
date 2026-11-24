@@ -51,6 +51,14 @@ const STEP_OUT_PACE := 0.7
 const CHARGE_TIME := 0.5
 # Below this ball speed (m/s) it is spin: the keeper stands closer and can stump you.
 const SPIN_BALL := 27.0
+# Moving across the crease before the ball: how far, and how long it takes.
+const SHUFFLE_OFF := 0.45
+const SHUFFLE_LEG := 0.40
+const SHUFFLE_TIME := 0.3
+# Wide lines at the batter's stumps, across from middle stump (T20: the off-side guideline,
+# and anything passing down the leg side).
+const WIDE_OFF_X := 0.89
+const WIDE_LEG_X := -0.42
 
 # Swipe to shot mapping, in fractions of screen height.
 const SWIPE_MIN_LEN := 0.04

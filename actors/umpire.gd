@@ -2,7 +2,7 @@ class_name Umpire
 extends Node3D
 ## The umpire at the bowler's end: stands behind the stumps and signals four, six and out.
 
-enum Sig { NONE, FOUR, SIX, OUT }
+enum Sig { NONE, FOUR, SIX, OUT, WIDE, NO_BALL, FREE_HIT }
 
 const HOLD := 2.2    # seconds a signal is held
 
@@ -51,6 +51,19 @@ func _pose() -> void:
 			var slow := smoothstep(0.0, 0.55, _t) * (1.0 - smoothstep(HOLD - 0.3, HOLD, _t))
 			figure.play("idle")
 			figure.reach(rest_l, Vector3(0.16, 2.0, -0.16), slow)
+		Sig.WIDE:
+			# Both arms straight out to the sides.
+			figure.play("idle")
+			figure.reach(Vector3(-0.86, 1.42, -0.05), Vector3(0.86, 1.42, -0.05), k)
+		Sig.NO_BALL:
+			# One arm straight out.
+			figure.play("idle")
+			figure.reach(rest_l, Vector3(0.86, 1.42, -0.12), k)
+		Sig.FREE_HIT:
+			# A finger up, circling.
+			var a := _t * 9.0
+			figure.play("idle")
+			figure.reach(rest_l, Vector3(0.18 + 0.14 * cos(a), 2.0, -0.16 + 0.14 * sin(a)), k)
 		_:
 			figure.release()
 			figure.play("fold_arms")

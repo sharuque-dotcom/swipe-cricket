@@ -54,6 +54,8 @@ var chase_scale := 1.0           # how hard simulated chasers hit (BallSim), lik
 var ipl := {}                    # in an IPL match: {"match": n, "stage": name, "you": code, "opp": code}
 var red_card: Array = []         # their innings, batter by batter (InningsSim.batting)
 var red_bowling: Array = []      # and our bowlers' figures in it
+var extras := 0                  # wides and no-balls conceded to us
+var free_hit := false            # the next legal ball is a free hit (after a no-ball)
 
 ## `opts` (all optional): attack (five names), pitch, night, blue_name, red_name,
 ## target_scale (how strong Red's batting is), lineup (Blue's eleven names), career.
@@ -189,8 +191,35 @@ func batter_line(i: int) -> String:
 
 ## Records one legal ball. `how_out` is "" when not out, otherwise a dismissal
 ## like "b Venn" or "c mid-on b Venn". Returns what happened as flags for the UI.
+## A wide ("wd") or a no-ball ("nb", with `bat_runs` hit off it). Neither counts as one of
+## the over's six; a no-ball makes the next ball a free hit. Only a run out can dismiss a
+## batter off either, and the game never runs anyone out, so these carry no wicket.
+func record_extra(kind: String, bat_runs: int = 0) -> Dictionary:
+	var ev := {"wicket": false, "over_end": false, "finished": false, "new_batter": "", "extra": kind}
+	var bi := bowler_index()
+	runs += 1 + bat_runs
+	extras += 1
+	bowling[bi].runs += 1 + bat_runs
+	if kind == "nb":
+		var bat: Dictionary = batters[striker]
+		bat.balls += 1
+		bat.runs += bat_runs
+		if bat_runs == 4:
+			bat.fours += 1
+		elif bat_runs == 6:
+			bat.sixes += 1
+		free_hit = true
+		this_over.append("nb" if bat_runs == 0 else "nb%d" % bat_runs)
+		if bat_runs % 2 == 1:
+			_swap()
+	else:
+		this_over.append("wd")
+	ev.finished = finished()
+	return ev
+
 func record(scored: int, how_out: String = "") -> Dictionary:
 	var ev := {"wicket": how_out != "", "over_end": false, "finished": false, "new_batter": ""}
+	free_hit = false
 	var bi := bowler_index()
 	var bat: Dictionary = batters[striker]
 	bat.balls += 1
@@ -292,7 +321,7 @@ func scorecard() -> Dictionary:
 			their_bowl.append({"name": str(w.name), "balls": int(w.balls), "runs": int(w.runs), "wkts": int(w.wkts)})
 	return {
 		"ours": {"team": blue_name, "score": "%d/%d" % [runs, wickets], "overs": overs_text(), "batting": bat, "yet": yet,
-			"fow": ", ".join(falls), "bowling": bowl, "bowling_team": red_name,
+			"fow": ", ".join(falls), "bowling": bowl, "bowling_team": red_name, "extras": extras,
 			"status": "" if finished() else "NEED %d OFF %d  ·  REQ. RATE %.1f" % [need(), balls_left(), required_rate()]},
 		"theirs": {"team": red_name, "score": "%d/%d" % [red_total, red_wickets], "overs": "20", "batting": them, "yet": [],
 			"fow": "", "bowling": their_bowl, "bowling_team": blue_name, "status": "TARGET %d" % target},
@@ -304,7 +333,8 @@ func to_dict() -> Dictionary:
 		"non_striker": non_striker, "bowling": bowling, "this_over": this_over,
 		"machine_state": str(machine_state), "seed": seed_value, "attack": attack, "pitch": pitch,
 		"night": night, "blue_name": blue_name, "red_name": red_name, "career": career, "timing": timing,
-		"fow": fow, "red_card": red_card, "red_bowling": red_bowling, "skills": skills, "kits": kits, "ipl": ipl, "chase_scale": chase_scale, "red_names": red_names}
+		"fow": fow, "red_card": red_card, "red_bowling": red_bowling, "skills": skills, "kits": kits, "ipl": ipl, "chase_scale": chase_scale, "red_names": red_names,
+		"extras": extras, "free_hit": free_hit}
 
 static func from_dict(d: Dictionary) -> MatchState:
 	var m := MatchState.new()
@@ -344,6 +374,8 @@ static func from_dict(d: Dictionary) -> MatchState:
 	m.red_names = d.get("red_names", RED)
 	m.red_card = d.get("red_card", [])
 	m.red_bowling = d.get("red_bowling", [])
+	m.extras = int(d.get("extras", 0))
+	m.free_hit = bool(d.get("free_hit", false))
 	var t: Dictionary = d.get("timing", {})
 	for k in m.timing:
 		m.timing[k] = int(t.get(k, 0))

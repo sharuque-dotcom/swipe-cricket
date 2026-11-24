@@ -30,7 +30,10 @@ var _throw_from := Vector3.ZERO
 var _throw_time := 0.0
 var _take_pos := Vector3.ZERO   # where the ball was when it reached the fielder
 var _wound := false
-var _caught_call := {}   # the CAUGHT call, waiting for the ball to reach the hands     # the throwing action has started; the ball is in the throwing hand
+var _caught_call := {}   # the CAUGHT call, waiting for the ball to reach the hands
+var _nb := false         # this ball is a no-ball
+var _forced := 0
+var _free := false       # this ball is a free hit     # the throwing action has started; the ball is in the throwing hand
 var _hold_pos := Vector3.ZERO
 
 var umpire: Umpire
@@ -289,6 +292,13 @@ func _next_ball() -> void:
 		Captain.plan(match_state.seed_value, match_state.over_index(), match_state.bowler_style()),
 		match_state.bowler_profile(), match_state.conditions())
 	match_state.machine_state = machine.state
+	if "--force-extras" in OS.get_cmdline_user_args():
+		# Inspection: alternate a wide and a no-ball.
+		_forced += 1
+		if _forced % 2 == 1:
+			d.target.x = 1.3
+		else:
+			d.no_ball = true
 	# The captain sets the field every ball, for whoever is on strike and what they have
 	# been doing. Say so when somebody moves.
 	var new_over := match_state.over_index() != _field_over
@@ -310,7 +320,9 @@ func _next_ball() -> void:
 	if before.is_empty() or new_over:
 		moved.clear()
 	_reset_fielders()
-	umpire.give(Umpire.Sig.NONE)
+	_nb = d.no_ball
+	_free = match_state.free_hit
+	umpire.give(Umpire.Sig.FREE_HIT if _free else Umpire.Sig.NONE)
 	_refresh_hud()
 	# Hold the bowler at the top of their mark and show the field until the player taps.
 	state = State.READY
@@ -329,6 +341,9 @@ func _next_ball() -> void:
 			hud.set_delivery(Captain.mood_text(mood))
 		elif not moved.is_empty():
 			hud.set_delivery("FIELD CHANGE  ·  %s" % ", ".join(moved.slice(0, 2)))
+	if _free:
+		hud.set_delivery("FREE HIT  ·  you can only be run out")
+		hud.flash_tag("FREE HIT", Hud.GOLD)
 
 ## Everything the pre-ball card says about the bowler and the field.
 func _card_info(new_over: bool, mood: String, mood_changed: bool) -> Dictionary:
@@ -356,6 +371,15 @@ func _style_info(p: Dictionary) -> Dictionary:
 		"pace": BowlerProfile.pace_text(p), "trait": str(p.trait)}
 
 ## The player has seen the field: the bowler sets off.
+func _release() -> void:
+	super._release()
+	if _nb and not _replaying:
+		# Overstepped: the call comes as it is bowled; the ball is still live.
+		sfx.play("horn", -5.0)
+		hud.flash_tag("NO BALL", Hud.RED)
+		hud.set_delivery("NO BALL  ·  free hit next")
+		umpire.give(Umpire.Sig.NO_BALL)
+
 func _bowl() -> void:
 	hud.hide_field_card()
 	hud.show_tap_prompt(false)
@@ -409,6 +433,7 @@ func _start_replay() -> void:
 	stadium.batter_stumps.reset()
 	batter.reset()
 	batter.set_advance(_charge)
+	batter.set_shuffle(_shuffle)
 	batter.backlift()
 	var hit := pending != null and pending.exit != null
 	_replay_ref = pending.contact_time if hit else _bowled_at
@@ -566,9 +591,13 @@ func _show_ball() -> void:
 func _call_catch() -> void:
 	if _caught_call.is_empty():
 		return
-	hud.show_big("CAUGHT!", Color(1.0, 0.3, 0.3))
+	if _caught_call.has("big"):
+		hud.show_big(str(_caught_call.big), Hud.GOLD)
+		sfx.play("cheer", -6.0)
+	else:
+		hud.show_big("CAUGHT!", Color(1.0, 0.3, 0.3))
+		sfx.play("groan", -2.0)
 	hud.show_shot(str(_caught_call.line), str(_caught_call.sub))
-	sfx.play("groan", -2.0)
 	_caught_call = {}
 
 func _connect() -> void:
@@ -588,6 +617,14 @@ func _score_hit() -> void:
 	var who := _surname(match_state.striker_name())
 	if r != null and pending != null and pending.exit != null:
 		match_state.note_shot(rad_to_deg(atan2(pending.exit.vel.x, -pending.exit.vel.z)), r.distance, 0 if r.caught else r.runs)
+	if r != null and r.caught and _saved():
+		_caught_call = {"big": "NOT OUT!", "line": "Caught, but it's a %s" % ("no-ball" if _nb else "free hit"), "sub": pending.shot_name}
+		var wait0 := maxf(0.0, _take_at - ball.time) if _take_at >= 0.0 else 0.0
+		if wait0 <= 0.0:
+			_call_catch()
+		timer = 1.8 + wait0
+		_record(0, "")
+		return
 	if r != null and r.caught:
 		var how := ("c %s b %s" % [r.fielder_name, _surname(match_state.bowler_name())]) if r.fielder_name != "bowler" \
 			else "c & b %s" % _surname(match_state.bowler_name())
@@ -625,6 +662,17 @@ func _bowled() -> void:
 		timer = 99.0
 		return
 	_bowled_at = ball.time
+	if _saved():
+		state = State.DEAD
+		timer = 1.9
+		stadium.batter_stumps.shatter(ball.pos.x, ball.vel.length())
+		fx.burst(Vector3(ball.pos.x, 0.45, 0.0))
+		sfx.play("stumps")
+		ball.vel = Vector3(ball.vel.x * 0.2, 1.5, ball.vel.z * 0.15)
+		hud.show_big("NOT OUT!", Hud.GOLD)
+		hud.show_shot("Bowled, but it's a %s" % ("no-ball" if _nb else "free hit"), "")
+		_record(0, "")
+		return
 	var who := _surname(match_state.striker_name())
 	super._bowled()
 	var how := "b %s" % _surname(match_state.bowler_name())
@@ -637,12 +685,37 @@ func _passed() -> void:
 	if _replaying:
 		_end_replay()
 		return
-	if _charge > 0.0 and _is_spin():
+	if _charge > 0.0 and _is_spin() and not _saved():
 		_stumped()
+		return
+	if not _nb and _is_wide():
+		_wide()
 		return
 	super._passed()
 	_keeper_takes()
 	_record(0, "")
+
+## Can this ball not get you out? (No-ball, or a free hit.)
+func _saved() -> bool:
+	return _nb or _free
+
+## Did it pass too wide for the batter to reach, from where they stood? Moving toward a ball
+## brings it within reach (not a wide); moving away from it does not make one.
+func _is_wide() -> bool:
+	var s := BallPhysics.state_at_z(launch, 0.0)
+	if s == null:
+		return false
+	return s.pos.x > Tuning.WIDE_OFF_X + maxf(_shuffle, 0.0) or s.pos.x < Tuning.WIDE_LEG_X + minf(_shuffle, 0.0)
+
+func _wide() -> void:
+	state = State.DEAD
+	timer = 1.6
+	_keeper_takes()
+	hud.show_big("WIDE", Color(0.75, 0.85, 1.0))
+	hud.show_shot("Wide  ·  one run, and bowl it again", "")
+	hud.flash_tag("WIDE", Color(0.55, 0.75, 1.0))
+	_record_extra("wd", 0)
+	_big_moment("WIDE", "+1  ·  %s" % _surname(match_state.bowler_name()), Hud.BLUE, Umpire.Sig.WIDE, 0.5)
 
 ## Down the track to a spinner and beaten: the keeper takes it and throws down the stumps.
 func _stumped() -> void:
@@ -688,6 +761,9 @@ func _record(scored: int, how_out: String, quiet: bool = false) -> void:
 	var hitter := match_state.striker
 	var had: int = match_state.batters[hitter].runs
 	var out_line := match_state.batter_line(hitter)
+	if _nb and not quiet:
+		_record_extra("nb", scored)
+		return
 	var ev := match_state.record(scored, how_out)
 	if quiet:
 		runs = match_state.runs
@@ -708,6 +784,22 @@ func _record(scored: int, how_out: String, quiet: bool = false) -> void:
 		phase = Phase.OVER_BREAK
 		timer = maxf(timer, 1.2) + 0.8
 		hud.set_delivery("End of over %d" % m.over_index())
+	_refresh_hud()
+
+## A wide or a no-ball: the extra run, the re-bowl, and (after a no-ball) the free hit.
+func _record_extra(kind: String, bat_runs: int) -> void:
+	_dead_for = 0.0
+	var hitter := match_state.striker
+	var had: int = match_state.batters[hitter].runs
+	var ev := match_state.record_extra(kind, bat_runs)
+	_queue_scenes(ev, hitter, had, "", "")
+	if autoplay:
+		print("%s  %d/%d  %s %d" % [match_state.overs_text(), match_state.runs, match_state.wickets, kind, bat_runs])
+	runs = match_state.runs
+	wickets = match_state.wickets
+	_save()
+	if ev.finished:
+		timer = maxf(timer, 2.2)
 	_refresh_hud()
 
 func _queue_scenes(ev: Dictionary, hitter: int, had: int, how_out: String, out_line: String) -> void:
@@ -1173,7 +1265,7 @@ func _on_swipe_started() -> void:
 		if _ready_t > 0.3:
 			_bowl()
 		return
-	if _try_charge():
+	if _touch_begin():
 		return
 	# Tap to skip the replay, or the wait (and any replay) after a ball.
 	if _replaying:

@@ -505,6 +505,51 @@ func show_timing(n: float, label: String, ms: float, perfect: float = Tuning.PER
 	_meter.visible = true
 	_meter.queue_redraw()
 
+## A slanted tag that pops in for the umpire's calls (WIDE, NO BALL, FREE HIT), holds,
+## and fades: the call is there without covering the batter.
+var _tag: PanelContainer
+var _tag_label: Label
+var _tag_tween: Tween
+
+func flash_tag(text: String, c: Color, hold: float = 1.5) -> void:
+	if _tag == null:
+		_tag = PanelContainer.new()
+		_tag.anchor_left = 0.5
+		_tag.anchor_right = 0.5
+		_tag.anchor_top = 0.30
+		_tag.anchor_bottom = 0.30
+		_tag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_tag_label = _text("", "bold", 46, NAVY)
+		_tag_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_tag.add_child(_tag_label)
+		_root.add_child(_tag)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = c
+	sb.skew = Vector2(-0.25, 0.0)
+	sb.content_margin_left = 34
+	sb.content_margin_right = 34
+	sb.content_margin_top = 4
+	sb.content_margin_bottom = 8
+	sb.border_width_bottom = 6
+	sb.border_color = c.darkened(0.35)
+	_tag.add_theme_stylebox_override("panel", sb)
+	_tag_label.text = text
+	_tag.reset_size()
+	var w := _tag.get_combined_minimum_size()
+	_tag.offset_left = -w.x * 0.5
+	_tag.offset_right = w.x * 0.5
+	_tag.pivot_offset = w * 0.5
+	_tag.visible = true
+	if _tag_tween:
+		_tag_tween.kill()
+	_tag.modulate.a = 1.0
+	_tag.scale = Vector2(0.2, 1.0)
+	_tag_tween = create_tween()
+	_tag_tween.tween_property(_tag, "scale", Vector2.ONE, 0.22).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_tag_tween.tween_interval(hold)
+	_tag_tween.tween_property(_tag, "modulate:a", 0.0, 0.3)
+	_tag_tween.tween_callback(func(): _tag.visible = false)
+
 ## Full-screen call: a slanted panel sweeps across, holds the word, and sweeps off.
 func wipe(text: String, sub: String, c: Color, hold: float = 0.55) -> void:
 	clear_result()
@@ -1044,6 +1089,8 @@ class ScorecardView:
 		var h: float = 64.0 + 30.0 + ROW * float(view.batting.size())
 		if not view.yet.is_empty():
 			h += 30.0 * maxi(1, _lines("Yet to bat: " + ", ".join(view.yet), size.x if size.x > 10 else 640.0, 19))
+		if int(view.get("extras", 0)) > 0:
+			h += 30.0
 		if str(view.fow) != "":
 			h += 26.0 * maxi(1, _lines("Fall of wickets: " + str(view.fow), size.x if size.x > 10 else 640.0, 18)) + 4.0
 		h += 18.0 + 30.0 + BROW * float(view.bowling.size()) + 26.0
@@ -1103,6 +1150,8 @@ class ScorecardView:
 		if not view.yet.is_empty():
 			y = _wrap("Yet to bat: " + ", ".join(view.yet), y + 18, 19, Hud.DIM) - 8
 			y += 8
+		if int(view.get("extras", 0)) > 0:
+			y = _wrap("Extras: %d" % int(view.extras), y + 18, 18, Hud.DIM) - 4
 		if str(view.fow) != "":
 			y = _wrap("Fall of wickets: " + str(view.fow), y + 18, 18, Hud.DIM) - 4
 		# Bowling.

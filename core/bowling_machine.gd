@@ -47,6 +47,18 @@ func next_for(style: String, over: int, plan: String = "", prof: Dictionary = {}
 	var pace := float(cond.get("pace", 1.0))
 	if pace < 1.0:
 		d.speed *= pace if not spinner else lerpf(1.0, pace, 0.4)
+	# Under pressure some go astray: a wide on either side, or an overstep. Spinners are
+	# steadier. Nets (`cond` empty) are always on target.
+	if cond.has("pitch"):
+		var death := over >= 15
+		var stray := (0.045 + (0.02 if death else 0.0)) * (0.55 if spinner else 1.0)
+		var roll := _rng.randf()
+		if roll < stray:
+			if _rng.randf() < 0.6:
+				d.target.x = _rng.randf_range(1.05, 1.35)
+			else:
+				d.target.x = _rng.randf_range(-0.85, -0.6)
+		d.no_ball = _rng.randf() < (0.004 if spinner else 0.012)
 	# A worn pitch: some keep low, some kick up.
 	d.bounce_var = _rng.randfn(0.0, Conditions.wear_sd(str(cond.get("pitch", "good")), over))
 	return d

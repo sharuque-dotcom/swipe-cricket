@@ -14,6 +14,7 @@ class Swing:
 	var skill: BatterSkill = null   # who is batting; null plays as the best batter
 	var advance := 0.0        # how far down the pitch they have come, metres (stepping out)
 	var intent := ""          # "defend", "ground", "lofted" or "" (as the swipe says)
+	var shuffle := 0.0        # how far the batter has moved across, metres (+ toward the off side)
 
 class Result:
 	extends RefCounted
@@ -92,7 +93,8 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 	var at := state_at_time(ball, r.contact_time)
 	r.contact_pos = at.pos
 	var rs := sk.reach_scale()
-	if at.pos.x < Tuning.REACH_LEG_X * rs or at.pos.x > Tuning.REACH_OFF_X * rs or at.pos.y > Tuning.REACH_TOP_Y:
+	var rx := at.pos.x - swing.shuffle   # across the pitch from where the batter now stands
+	if rx < Tuning.REACH_LEG_X * rs or rx > Tuning.REACH_OFF_X * rs or at.pos.y > Tuning.REACH_TOP_Y:
 		r.reason = "Out of reach"
 		return r
 
@@ -142,7 +144,7 @@ static func resolve(ball: BallPhysics.State, swing: Swing) -> Result:
 	var q_height := 1.0 - 0.6 * clampf(off_h / 0.5, 0.0, 1.0)
 	# Hitting against the line costs control.
 	var side := signf(sin(swing.angle))
-	var against := clampf(-side * (at.pos.x - 0.05) / 0.6, 0.0, 1.0)
+	var against := clampf(-side * (rx - 0.05) / 0.6, 0.0, 1.0)
 	var q_line := 1.0 - 0.5 * against * absf(sin(swing.angle))
 
 	r.outcome = Outcome.HIT

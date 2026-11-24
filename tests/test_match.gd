@@ -224,3 +224,17 @@ func test_scorecard_adds_up() -> void:
 		if bool(b.out):
 			outs += 1
 	check(outs == m.red_wickets, "%d out on the card, %d wickets" % [outs, m.red_wickets])
+
+func test_wide_and_no_ball_accounting() -> void:
+	var m := MatchState.create(3)
+	var r0 := m.runs
+	m.record_extra("wd")
+	check(m.balls == 0 and m.runs == r0 + 1 and m.extras == 1, "a wide: one run, not one of the six")
+	m.record_extra("nb", 4)
+	check(m.balls == 0 and m.runs == r0 + 6, "a no-ball hit for four: five runs")
+	check(m.batters[m.striker].runs == 4 and m.batters[m.striker].fours == 1, "the four is the batter's")
+	check(m.free_hit, "a free hit follows a no-ball")
+	m.record(0)
+	check(not m.free_hit and m.balls == 1, "the free hit is used up by the next legal ball")
+	var back := MatchState.from_dict(m.to_dict())
+	check(back.extras == 2, "extras survive a save")

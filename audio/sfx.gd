@@ -27,6 +27,12 @@ func _ready() -> void:
 		return _crowd() * env * 0.9))
 	_add("groan", _make(1.2, func(t: float) -> float:
 		return _crowd() * minf(t / 0.15, 1.0) * exp(-t * 3.0) * 0.5))
+	# The no-ball horn: two short blasts.
+	_add("horn", _make(0.75, func(t: float) -> float:
+		var on := 1.0 if (t < 0.28 or (t > 0.4 and t < 0.7)) else 0.0
+		var f := 440.0 if t < 0.35 else 554.0
+		var s := sin(TAU * f * t) + 0.5 * sin(TAU * f * 2.0 * t) + 0.3 * signf(sin(TAU * f * t))
+		return s * on * 0.22))
 
 var _lp := 0.0
 var _lp2 := 0.0

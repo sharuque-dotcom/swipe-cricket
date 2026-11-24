@@ -62,6 +62,8 @@ var _swing_style := ""
 var _swing_clock := -1.0     # ball-clock time the bat started moving, for replays
 var _charge := 0.0           # how far the batter has come down the pitch this ball
 var intent := "ground"       # the shot chosen before the ball: defend, ground or lofted
+var _shuffle := 0.0          # how far the batter has moved across this ball (+ off side)
+var _touch := -1.0           # seconds a run-up touch has been held, deciding what it is
 
 # Test hooks: --autoplay swings by itself, --shots=DIR saves frames (--shot-dt, --shots-from, --shots-max).
 var autoplay := false
@@ -162,6 +164,8 @@ func _ready() -> void:
 	swipe.swiped.connect(_on_swiped)
 	swipe.swipe_started.connect(_on_swipe_started)
 	swipe.swipe_moved.connect(hud.trail_points)
+	swipe.swipe_moved.connect(_on_swipe_moved)
+	swipe.swipe_ended.connect(_on_swipe_ended)
 	hud.show_intent(intent)
 	hud.intent_changed.connect(func(i: String):
 		intent = i
@@ -245,6 +249,8 @@ func _start_delivery(d: Delivery) -> void:
 	batter.reset()
 	batter.set_advance(0.0)
 	_charge = 0.0
+	_shuffle = 0.0
+	_touch = -1.0
 	bowler.set_action(delivery.action, delivery.left_arm, delivery.speed < 27.0)
 	bowler.place_for(delivery.release)
 	bowler.start(delivery.speed < 27.0)
@@ -272,7 +278,47 @@ func _on_swipe_started() -> void:
 	if state == State.SUMMARY and timer > 0.6:
 		_new_session()
 		return
-	_try_charge()
+	_touch_begin()
+
+## A touch while the bowler runs in is one of three things, told apart by what the finger
+## does: slide it sideways to move across the crease, hold it (or tap) to dance down the
+## pitch, or keep going into a shot swipe.
+func _touch_begin() -> bool:
+	if state == State.RUNUP and bowler.t > -1.2 and not swung and _charge == 0.0:
+		_touch = 0.0
+		return true
+	return _try_charge()
+
+func _on_swipe_moved(points: PackedVector2Array) -> void:
+	if _touch < 0.0 or points.size() < 2:
+		return
+	var h := float(get_viewport().get_visible_rect().size.y)
+	var v := points[points.size() - 1] - points[0]
+	if state == State.RUNUP and bowler.t <= -0.35 and absf(v.x) > 0.05 * h and absf(v.x) > 1.4 * absf(v.y):
+		_touch = -1.0
+		_do_shuffle(signf(v.x))
+	elif v.length() > 0.035 * h:
+		_touch = -1.0   # a shot swipe, not a step
+
+func _on_swipe_ended() -> void:
+	if _touch >= 0.0:
+		_touch = -1.0
+		_try_charge()
+
+## Move across the crease: toward the off side to get outside the line, or to leg to free
+## the arms. Seen early enough, the bowler follows you.
+func _do_shuffle(dir: float) -> void:
+	if _shuffle != 0.0 or swung or state != State.RUNUP:
+		return
+	_shuffle = Tuning.SHUFFLE_OFF if dir > 0.0 else -Tuning.SHUFFLE_LEG
+	batter.shuffle(_shuffle, Tuning.SHUFFLE_TIME)
+	hud.set_delivery("ACROSS TO THE OFF SIDE" if dir > 0.0 else "MAKING ROOM")
+	if bowler.t < -0.6:
+		delivery.target.x += _shuffle * 0.7
+		launch = delivery.solve()
+		var pitch_at := BallPhysics.state_at_first_bounce(launch)
+		if pitch_at != null:
+			marker.position = Vector3(pitch_at.pos.x, 0.03, pitch_at.pos.z)
 
 ## A touch while the bowler is running in (or just after the ball leaves the hand) sends
 ## the batter down the pitch. Then they swipe as usual to play the shot.
@@ -322,6 +368,7 @@ func _swing(angle: float, power: float, loft: float, contact_time: float) -> voi
 	sw.contact_time = contact_time
 	sw.skill = _batter_skill()
 	sw.advance = _charge
+	sw.shuffle = _shuffle
 	# The bot keeps its own loft; a player's choice of shot decides it for them.
 	sw.intent = ("lofted" if loft > 0.5 else "ground") if autoplay else intent
 	pending = ShotResolver.resolve(launch, sw)
@@ -348,6 +395,11 @@ func _process(delta: float) -> void:
 	Engine.time_scale = 0.18 if Time.get_ticks_msec() < _slowmo_until else time_scale_base
 	delta = minf(delta, 0.05)
 	frame_usec = Time.get_ticks_usec()
+	if _touch >= 0.0:
+		_touch += delta
+		if _touch >= 0.14:
+			_touch = -1.0
+			_try_charge()
 	match state:
 		State.RUNUP:
 			if bowler.t > -0.55:
