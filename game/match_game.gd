@@ -336,7 +336,7 @@ func _next_ball() -> void:
 	if match_state.night:
 		stadium.set_dusk(float(match_state.over_index()) / 18.0)
 	var d := machine.next_for(match_state.bowler_style(), match_state.over_index(),
-		Captain.plan(match_state.seed_value, match_state.over_index(), match_state.bowler_style()),
+		_plan_for_ball(),
 		match_state.bowler_profile(), match_state.conditions())
 	match_state.machine_state = machine.state
 	if "--force-extras" in OS.get_cmdline_user_args():
@@ -401,6 +401,13 @@ func _next_ball() -> void:
 		hud.set_delivery("FREE HIT  ·  you can only be run out")
 		hud.flash_tag("FREE HIT", Hud.GOLD)
 
+## The captain's plan for the over, unless this bowler has worked you out before.
+func _plan_for_ball() -> String:
+	var mine := Rivals.plan(match_state.bowler_name())
+	if mine != "" and match_state.player_on_strike():
+		return mine
+	return Captain.plan(match_state.seed_value, match_state.over_index(), match_state.bowler_style())
+
 ## Everything the pre-ball card says about the bowler and the field.
 func _card_info(new_over: bool, mood: String, mood_changed: bool) -> Dictionary:
 	var m := match_state
@@ -420,6 +427,10 @@ func _card_info(new_over: bool, mood: String, mood_changed: bool) -> Dictionary:
 	info["shots"] = m.striker_shots()
 	info["striker"] = m.striker_name()
 	info["auto"] = auto_bowl
+	if match_state.player_on_strike():
+		var rival := Rivals.line(m.bowler_name())
+		if rival != "":
+			info["rival"] = rival
 	return info
 
 func _style_info(p: Dictionary) -> Dictionary:
@@ -893,6 +904,8 @@ func _record(scored: int, how_out: String, quiet: bool = false) -> void:
 	if _nb and not quiet:
 		_record_extra("nb", scored)
 		return
+	if not quiet and match_state.player_on_strike() and not autoplay:
+		Rivals.record(match_state.bowler_name(), scored, how_out)
 	var ev := match_state.record(scored, how_out)
 	if quiet:
 		runs = match_state.runs

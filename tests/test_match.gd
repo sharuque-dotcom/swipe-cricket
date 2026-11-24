@@ -252,3 +252,13 @@ func test_chase_of_the_day_sets_up_the_finish() -> void:
 	for b in m.batters:
 		total += int(b.runs)
 	check(total == m.runs, "the batters' runs add up (%d v %d)" % [total, m.runs])
+
+func test_bowlers_remember_how_they_got_you() -> void:
+	var name := "Test Bowler %d" % Time.get_ticks_usec()
+	check(Rivals.plan(name) == "" and Rivals.line(name) == "", "a stranger has no plan")
+	for i in 5:
+		Rivals.record(name, 1, "")
+	Rivals.record(name, 0, "b Bowler")
+	Rivals.record(name, 0, "lbw b Bowler")
+	check(Rivals.plan(name) == "straight", "out bowled and lbw: he attacks the stumps")
+	check(Rivals.line(name).begins_with("RIVAL"), "the card calls him a rival: %s" % Rivals.line(name))

@@ -1065,7 +1065,11 @@ class FieldCard:
 		draw_style_box(Hud.pill_box(badge_c, 10), Rect2(x, 112, bw, 38))
 		_t("bold", str(info.kind), x, 141, 28, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER, bw)
 		_t("semi", "%s  ·  %s" % [info.style, info.pace], x + bw + 14, 141, 25, Hud.TEXT)
-		_t("med", str(info.trait), x, 184, 25, Hud.DIM)
+		if info.has("rival"):
+			var rv := str(info.rival)
+			_t("semi", rv, x, 184, 22 if rv.length() > 46 else 25, Hud.RED.lightened(0.25) if rv.begins_with("RIVAL") else Hud.GOLD)
+		else:
+			_t("med", str(info.trait), x, 184, 25, Hud.DIM)
 
 		# The field.
 		var c := Vector2(w * 0.5, top + d * 0.5)
