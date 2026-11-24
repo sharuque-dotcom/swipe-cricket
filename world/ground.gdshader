@@ -6,7 +6,8 @@ uniform vec3 centre = vec3(0.0, 0.0, -10.06);
 uniform float boundary = 65.0;
 uniform float inner_circle = 27.4;
 uniform float stripe_width = 6.5;
-uniform float detail_size = 4.0;   // metres covered by one tile of the grass photo
+uniform float detail_size = 4.0;
+uniform float saturation = 0.78;   // metres covered by one tile of the grass photo
 uniform sampler2D detail : hint_default_white, filter_linear_mipmap, repeat_enable;
 varying vec3 wp;
 
@@ -38,8 +39,10 @@ void fragment() {
 	// Bands across the pitch (stacked towards the bowler on screen) and a softer cross set.
 	float band = step(0.5, fract((p.y - centre.z) / stripe_width));
 	float cross_band = step(0.5, fract(p.x / stripe_width));
-	vec3 light = vec3(0.110, 0.235, 0.028);
-	vec3 deep = vec3(0.046, 0.118, 0.012);
+	// Softer, less saturated greens with gentle stripes: easier on the eyes over a long
+	// session, and the white ball and red marker stand out against them.
+	vec3 light = vec3(0.150, 0.262, 0.078);
+	vec3 deep = vec3(0.108, 0.200, 0.058);
 	vec3 col = mix(deep, light, band);
 	col *= 0.93 + 0.07 * cross_band;
 
@@ -64,6 +67,9 @@ void fragment() {
 	float outside = smoothstep(boundary - 0.2, boundary + 0.8, r);
 	col = mix(col, deep * 0.6, outside);
 
+	// Pull the saturation down a touch: real broadcast grass reads olive, not neon.
+	float lum = dot(col, vec3(0.299, 0.587, 0.114));
+	col = mix(vec3(lum), col, saturation);
 	ALBEDO = col;
 	ROUGHNESS = 1.0;
 	SPECULAR = 0.0;

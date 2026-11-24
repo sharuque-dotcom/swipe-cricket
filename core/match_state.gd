@@ -65,6 +65,8 @@ static func create(rng_seed: int, opts: Dictionary = {}) -> MatchState:
 	var cond := Conditions.pick(rng_seed)
 	m.pitch = str(opts.get("pitch", cond.pitch))
 	m.night = bool(opts.get("night", cond.night))
+	if Settings.get_bool("day_only", false) and not opts.has("night"):
+		m.night = false
 	m.attack = opts.get("attack", BowlerProfile.DEFAULT_ATTACK.duplicate())
 	m.blue_name = str(opts.get("blue_name", "BLUE"))
 	m.red_name = str(opts.get("red_name", "RED"))

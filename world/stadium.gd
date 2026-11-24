@@ -260,18 +260,15 @@ func set_conditions(pitch: String, night: bool) -> void:
 		l.visible = night
 	_lamp_mat.set_shader_parameter("lift", 2.2 if night else 0.1)
 	if night:
-		_sky_mat.sky_top_color = Color(0.015, 0.025, 0.07)
-		_sky_mat.sky_horizon_color = Color(0.10, 0.12, 0.20)
-		_sky_mat.ground_horizon_color = Color(0.10, 0.12, 0.16)
-		_env.ambient_light_color = Color(0.62, 0.68, 0.85)
-		_env.ambient_light_energy = 0.75
-		_env.fog_light_color = Color(0.10, 0.12, 0.18)
-		_sun.rotation_degrees = Vector3(-72.0, 14.0, 0.0)
-		_sun.light_color = Color(0.94, 0.97, 1.0)
-		_sun.light_energy = 1.05
-		pass
-		crowd_material.set_shader_parameter("lit", 0.62)
-		_env.tonemap_exposure = 1.18
+		# Twilight, not black night: the floodlights are on and the field is bright, while
+		# the sky goes from sunset to deep blue as the innings goes on (see set_dusk).
+		_sun.rotation_degrees = Vector3(-68.0, 14.0, 0.0)
+		_sun.light_color = Color(1.0, 0.97, 0.92)
+		_sun.light_energy = 1.0
+		_env.ambient_light_color = Color(0.70, 0.73, 0.86)
+		_env.ambient_light_energy = 0.85
+		_env.tonemap_exposure = 1.12
+		set_dusk(0.0)
 	else:
 		_sky_mat.sky_top_color = Color(0.42, 0.62, 0.90)
 		_sky_mat.sky_horizon_color = Color(0.82, 0.87, 0.91)
@@ -285,6 +282,15 @@ func set_conditions(pitch: String, night: bool) -> void:
 		pass
 		crowd_material.set_shader_parameter("lit", 1.0)
 		_env.tonemap_exposure = 1.05
+
+## How far into the evening (0 = the sun just down, 1 = full dark). Only under lights.
+func set_dusk(t: float) -> void:
+	t = clampf(t, 0.0, 1.0)
+	_sky_mat.sky_top_color = Color(0.22, 0.26, 0.55).lerp(Color(0.05, 0.08, 0.20), t)
+	_sky_mat.sky_horizon_color = Color(0.98, 0.58, 0.36).lerp(Color(0.32, 0.22, 0.44), t)
+	_sky_mat.ground_horizon_color = Color(0.55, 0.40, 0.38).lerp(Color(0.16, 0.14, 0.22), t)
+	_env.fog_light_color = Color(0.70, 0.52, 0.50).lerp(Color(0.16, 0.15, 0.26), t)
+	crowd_material.set_shader_parameter("lit", lerpf(0.85, 0.68, t))
 
 ## Four floodlight towers round the ground, with a glow at the top of each.
 func _build_floodlights() -> void:

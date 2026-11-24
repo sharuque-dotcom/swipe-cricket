@@ -290,6 +290,8 @@ func _next_ball() -> void:
 	ball_no = match_state.balls + 1
 	machine.state = match_state.machine_state
 	Conditions.apply(match_state.pitch, match_state.night, match_state.over_index())
+	if match_state.night:
+		stadium.set_dusk(float(match_state.over_index()) / 18.0)
 	var d := machine.next_for(match_state.bowler_style(), match_state.over_index(),
 		Captain.plan(match_state.seed_value, match_state.over_index(), match_state.bowler_style()),
 		match_state.bowler_profile(), match_state.conditions())

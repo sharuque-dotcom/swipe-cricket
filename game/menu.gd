@@ -61,6 +61,27 @@ func _ready() -> void:
 		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://match.json"))
 		_go("match")))
 	col.add_child(_button("NETS", "12 balls to find your timing", Hud.GOLD, func(): _go("nets")))
+	# Lights: twilight matches under lights, or every match in the day.
+	var day := Button.new()
+	day.focus_mode = Control.FOCUS_NONE
+	day.custom_minimum_size = Vector2(0, 64)
+	day.add_theme_font_override("font", Hud.font("bold"))
+	day.add_theme_font_size_override("font_size", 26)
+	var paint := func():
+		var on := Settings.get_bool("day_only", false)
+		day.text = "DAY MATCHES ONLY:  %s" % ("ON" if on else "OFF")
+		for st in ["normal", "hover", "pressed", "focus"]:
+			var sb := Hud.pill_box(Color(Hud.NAVY.r, Hud.NAVY.g, Hud.NAVY.b, 0.8), 32)
+			sb.border_color = Hud.GOLD if on else Color(1, 1, 1, 0.2)
+			sb.set_border_width_all(2)
+			day.add_theme_stylebox_override(st, sb)
+		for k in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+			day.add_theme_color_override(k, Hud.GOLD if on else Hud.DIM)
+	paint.call()
+	day.pressed.connect(func():
+		Settings.set_bool("day_only", not Settings.get_bool("day_only", false))
+		paint.call())
+	col.add_child(day)
 
 func _label(text: String, weight: String, size: int, c: Color) -> Label:
 	var l := Label.new()
