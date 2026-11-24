@@ -69,3 +69,24 @@ func test_opener_is_in_chennai_at_night() -> void:
 	var m := MatchState.create(Ipl.seed_for(f, "bbl"), s.match_opts(f, "MR"))
 	check(m.night and m.attack.has("Jhye Richardson"), "a night game against the Scorchers' attack")
 	check(m.batters[0].name == "Jake Fraser-McGurk", "Fraser-McGurk opens")
+
+func test_power_surge_rules() -> void:
+	var m := MatchState.create(4, {"surge": true})
+	check(m.powerplay(), "over 1 is powerplay")
+	for i in 24:
+		m.record(1)
+	check(not m.powerplay(), "the BBL powerplay is only four overs")
+	check(not m.can_surge(), "no surge before the eleventh over")
+	while m.over_index() < 12:
+		m.record(1)
+	check(m.can_surge() and m.call_surge(), "called at the start of the thirteenth")
+	check(m.powerplay(), "the field is in for the surge")
+	for i in 12:
+		m.record(1)
+	check(not m.powerplay() and not m.can_surge(), "two overs, and only once")
+	var back := MatchState.from_dict(m.to_dict())
+	check(back.surge_at == 12 and back.surge_rule, "the surge survives a save")
+	var ipl := MatchState.create(4)
+	for i in 30:
+		ipl.record(1)
+	check(ipl.powerplay() and not ipl.can_surge(), "IPL: six-over powerplay, no surge")

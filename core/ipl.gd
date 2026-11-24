@@ -115,7 +115,8 @@ func match_opts(f: Dictionary, chasing: String) -> Dictionary:
 		"red_lineup": d.xi_names(first), "attack": d.attack_names(first), "blue_bowlers": d.attack_names(chasing),
 		"target_scale": _scale(first, chasing), "chase_scale": _scale(chasing, first) - 0.16, "pitch": d.GROUNDS.get(str(f.ground), "good"), "night": not is_day(f),
 		"kits": {"blue": [_rgb(t2.kit), _rgb(t2.trim)], "red": [_rgb(t1.kit), _rgb(t1.trim)]},
-		"ipl": {"key": str(f.key), "n": int(f.n), "stage": str(f.stage), "you": chasing, "opp": first, "ground": str(f.ground), "date": str(f.date), "lg": lg}}
+		"ipl": {"key": str(f.key), "n": int(f.n), "stage": str(f.stage), "you": chasing, "opp": first, "ground": str(f.ground), "date": str(f.date), "lg": lg},
+		"surge": lg == "bbl"}
 
 static func _rgb(c: Color) -> Array:
 	return [c.r, c.g, c.b]
@@ -130,6 +131,9 @@ func sim_fixture(f: Dictionary) -> void:
 	Conditions.apply(m.pitch, m.night, 0)
 	while not m.finished():
 		Conditions.apply(m.pitch, m.night, m.over_index())
+		# The chasing side takes its Power Surge around the fifteenth over.
+		if m.can_surge() and (m.over_index() >= 14 or m.surge_due()):
+			m.call_surge()
 		var r := BallSim.ball(m, rng)
 		m.record(int(r[0]), str(r[1]))
 	Conditions.reset()

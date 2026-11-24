@@ -73,6 +73,8 @@ var auto_toggle: Button
 signal auto_bowl_toggled(on: bool)
 ## The shot chosen before each ball. Emits `intent_changed("defend"|"ground"|"lofted")`.
 signal intent_changed(intent: String)
+signal surge_pressed
+var surge_button: Button
 var intent_buttons: Array[Control] = []
 var _intent_bar: VBoxContainer
 const INTENTS := [["defend", "DEFEND"], ["ground", "GROUND"], ["lofted", "LOFTED"]]
@@ -828,6 +830,38 @@ func show_tap_prompt(on: bool, auto: bool = false) -> void:
 	_tap.visible = on
 	_tap_label.text = "AUTO BOWL  ·  TAP TO GO NOW" if auto else "TAP TO BOWL"
 	_tap_label.add_theme_font_size_override("font_size", 26 if auto else 36)
+
+## The CALL SURGE button (Big Bash): above the shot buttons while it can be called.
+func show_surge(on: bool) -> void:
+	if surge_button == null:
+		surge_button = Button.new()
+		surge_button.text = "CALL\nSURGE"
+		surge_button.focus_mode = Control.FOCUS_NONE
+		surge_button.anchor_left = 1.0
+		surge_button.anchor_right = 1.0
+		surge_button.anchor_top = 1.0
+		surge_button.anchor_bottom = 1.0
+		surge_button.offset_left = -(MARGIN + 132)
+		surge_button.offset_right = -MARGIN
+		surge_button.offset_top = -(MARGIN + 40 + 58 + 12 + 3 * 46 + 12 + 12 + 86)
+		surge_button.offset_bottom = -(MARGIN + 40 + 58 + 12 + 3 * 46 + 12 + 12)
+		surge_button.add_theme_font_override("font", font("bold"))
+		surge_button.add_theme_font_size_override("font_size", 24)
+		surge_button.add_theme_constant_override("line_spacing", -6)
+		var orange := Color(1.0, 0.5, 0.0)
+		for st in ["normal", "hover", "pressed", "hover_pressed", "focus"]:
+			var sb := StyleBoxFlat.new()
+			sb.bg_color = orange if st != "pressed" else orange.darkened(0.2)
+			sb.skew = Vector2(-0.18, 0.0)
+			sb.set_corner_radius_all(6)
+			sb.border_width_bottom = 5
+			sb.border_color = orange.darkened(0.4)
+			surge_button.add_theme_stylebox_override(st, sb)
+		for k in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+			surge_button.add_theme_color_override(k, NAVY)
+		surge_button.pressed.connect(func(): surge_pressed.emit())
+		_root.add_child(surge_button)
+	surge_button.visible = on
 
 ## Show the auto-bowl switch, set to `on`, without emitting.
 func show_auto_toggle(on: bool) -> void:

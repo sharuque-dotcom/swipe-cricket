@@ -56,6 +56,10 @@ var red_card: Array = []         # their innings, batter by batter (InningsSim.b
 var red_bowling: Array = []      # and our bowlers' figures in it
 var extras := 0                  # wides and no-balls conceded to us
 var free_hit := false            # the next legal ball is a free hit (after a no-ball)
+## Big Bash rules: a four-over powerplay, plus the Power Surge: two more powerplay overs the
+## batting side calls once the tenth over is done.
+var surge_rule := false
+var surge_at := -1               # the over the surge starts (0-based), -1 not called
 
 ## `opts` (all optional): attack (five names), pitch, night, blue_name, red_name,
 ## target_scale (how strong Red's batting is), lineup (Blue's eleven names), career.
@@ -79,7 +83,8 @@ static func create(rng_seed: int, opts: Dictionary = {}) -> MatchState:
 	var strength := float(opts.get("target_scale", 1.0)) * float(Conditions.info(m.pitch).par)
 	var red_names: Array = opts.get("red_lineup", RED)
 	var our: Array = opts.get("lineup", BLUE)
-	var sim := InningsSim.run(rng_seed, red_names, strength, opts.get("blue_bowlers", our.slice(6, 11)), our)
+	m.surge_rule = bool(opts.get("surge", false))
+	var sim := InningsSim.run(rng_seed, red_names, strength, opts.get("blue_bowlers", our.slice(6, 11)), our, m.surge_rule)
 	m.red_card = sim.batting
 	m.red_bowling = sim.bowling
 	m.red_total = sim.total
@@ -98,6 +103,29 @@ func conditions() -> Dictionary:
 
 func bowler_profile() -> Dictionary:
 	return BowlerProfile.of(bowler_name())
+
+## Is the current over a powerplay (fielding restrictions, and batters go harder)?
+func powerplay() -> bool:
+	var o := over_index()
+	if not surge_rule:
+		return o < 6
+	return o < 4 or (surge_at >= 0 and o >= surge_at and o < surge_at + 2)
+
+## The Power Surge can be called at the start of an over, from the eleventh to the
+## nineteenth, once.
+func can_surge() -> bool:
+	var o := over_index()
+	return surge_rule and surge_at < 0 and balls % BALLS_PER_OVER == 0 and o >= 10 and o <= 18 and not finished()
+
+func call_surge() -> bool:
+	if not can_surge():
+		return false
+	surge_at = over_index()
+	return true
+
+## Not called by the nineteenth: it is taken for you.
+func surge_due() -> bool:
+	return can_surge() and over_index() >= 18
 
 func over_index() -> int:
 	return balls / BALLS_PER_OVER
@@ -336,7 +364,7 @@ func to_dict() -> Dictionary:
 		"machine_state": str(machine_state), "seed": seed_value, "attack": attack, "pitch": pitch,
 		"night": night, "blue_name": blue_name, "red_name": red_name, "career": career, "timing": timing,
 		"fow": fow, "red_card": red_card, "red_bowling": red_bowling, "skills": skills, "kits": kits, "ipl": ipl, "chase_scale": chase_scale, "red_names": red_names,
-		"extras": extras, "free_hit": free_hit}
+		"extras": extras, "free_hit": free_hit, "surge_rule": surge_rule, "surge_at": surge_at}
 
 static func from_dict(d: Dictionary) -> MatchState:
 	var m := MatchState.new()
@@ -378,6 +406,8 @@ static func from_dict(d: Dictionary) -> MatchState:
 	m.red_bowling = d.get("red_bowling", [])
 	m.extras = int(d.get("extras", 0))
 	m.free_hit = bool(d.get("free_hit", false))
+	m.surge_rule = bool(d.get("surge_rule", false))
+	m.surge_at = int(d.get("surge_at", -1))
 	var t: Dictionary = d.get("timing", {})
 	for k in m.timing:
 		m.timing[k] = int(t.get(k, 0))

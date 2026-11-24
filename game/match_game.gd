@@ -241,6 +241,9 @@ func _build_fielders() -> void:
 			hud.show_tap_prompt(not hud._field_card.visible, on)
 			_ready_t = 0.0)
 	swipe.blockers.append(hud.auto_toggle)
+	hud.show_surge(false)
+	swipe.blockers.append(hud.surge_button)
+	hud.surge_pressed.connect(_on_surge)
 	hud.choice_made.connect(_on_choice)
 	hud.scorecard_closed.connect(func():
 		if not _scene.is_empty() and str(_scene.kind) == "scorecard":
@@ -304,6 +307,10 @@ func _next_ball() -> void:
 	_caught_call = {}
 	ball_no = match_state.balls + 1
 	machine.state = match_state.machine_state
+	if match_state.surge_due():
+		match_state.call_surge()
+		hud.flash_tag("POWER SURGE", Color(1.0, 0.5, 0.0))
+		hud.set_delivery("POWER SURGE  ·  taken for you  ·  two overs, two out")
 	Conditions.apply(match_state.pitch, match_state.night, match_state.over_index())
 	if match_state.night:
 		stadium.set_dusk(float(match_state.over_index()) / 18.0)
@@ -366,6 +373,9 @@ func _next_ball() -> void:
 			hud.set_delivery(Captain.mood_text(mood))
 		elif not moved.is_empty():
 			hud.set_delivery("FIELD CHANGE  ·  %s" % ", ".join(moved.slice(0, 2)))
+	hud.show_surge(match_state.can_surge())
+	if match_state.surge_at >= 0 and match_state.powerplay():
+		hud.set_delivery("POWER SURGE  ·  only two fielders out")
 	if _free:
 		hud.set_delivery("FREE HIT  ·  you can only be run out")
 		hud.flash_tag("FREE HIT", Hud.GOLD)
@@ -385,7 +395,7 @@ func _card_info(new_over: bool, mood: String, mood_changed: bool) -> Dictionary:
 	info["mood"] = {"attack": "ATTACKING FIELD", "defend": "SPREAD FIELD", "save_one": "SAVING THE SINGLE"}.get(mood, "STANDARD FIELD")
 	info["mood_changed"] = mood_changed
 	info["mood_color"] = {"attack": Hud.RED, "defend": Hud.BLUE, "save_one": Hud.GOLD}.get(mood, Hud.DIM)
-	info["ring"] = "%d OUTSIDE THE RING%s" % [Fielding.outside_ring(field), "  ·  POWERPLAY" if m.over_index() < 6 else ""]
+	info["ring"] = "%d OUTSIDE THE RING%s" % [Fielding.outside_ring(field), ("  ·  POWER SURGE" if m.surge_at >= 0 and m.over_index() >= m.surge_at else "  ·  POWERPLAY") if m.powerplay() else ""]
 	info["shots"] = m.striker_shots()
 	info["striker"] = m.striker_name()
 	info["auto"] = auto_bowl
@@ -396,8 +406,23 @@ func _style_info(p: Dictionary) -> Dictionary:
 		"pace": BowlerProfile.pace_text(p), "trait": str(p.trait)}
 
 ## The player has seen the field: the bowler sets off.
+## The batting side calls the Power Surge: the field comes in for two overs.
+func _on_surge() -> void:
+	if state != State.READY or not match_state.call_surge():
+		return
+	hud.show_surge(false)
+	hud.flash_tag("POWER SURGE", Color(1.0, 0.5, 0.0))
+	sfx.play("sting", -4.0)
+	stadium.crowd_material.set_shader_parameter("excite", 0.6)
+	_set_field()
+	_reset_fielders()
+	hud.radar_field(field)
+	hud.set_delivery("POWER SURGE  ·  only two fielders out")
+	_save()
+
 func _release() -> void:
 	super._release()
+	hud.show_surge(false)
 	hud.set_compact(true)
 	if _nb and not _replaying:
 		# Overstepped: the call comes as it is bowled; the ball is still live.

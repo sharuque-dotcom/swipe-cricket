@@ -12,7 +12,7 @@ const DISMISSALS := ["b %s", "c long-on b %s", "c cover b %s", "c †keeper b %s
 static func ball(m: MatchState, rng: RandomNumberGenerator) -> Array:
 	var sk := m.skill_for(m.striker)
 	var over := m.over_index()
-	var w: Array = (InningsSim.POWERPLAY if over < 6 else (InningsSim.DEATH if over >= 16 else InningsSim.MIDDLE)).duplicate()
+	var w: Array = (InningsSim.POWERPLAY if m.powerplay() else (InningsSim.DEATH if over >= 16 else InningsSim.MIDDLE)).duplicate()
 	var push := clampf((m.required_rate() - 8.0) / 6.0, -0.5, 1.0)
 	var s := m.chase_scale
 	if s != 1.0:
