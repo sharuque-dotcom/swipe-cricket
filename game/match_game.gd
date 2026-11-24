@@ -1315,6 +1315,8 @@ func _career_result(won: bool, tied: bool, text: String, by: int) -> void:
 	for l: Array in rep.get("losses", []):
 		rows.append(["%s: %s" % [l[0], str(l[1]).capitalize()], "-%d" % int(l[2]), Hud.RED])
 	var notes := []
+	if str(rep.get("selection", "")) != "":
+		notes.append(str(rep.selection))
 	if car != null:
 		notes.append("%d skill point%s to spend on your career page" % [car.points, "" if car.points == 1 else "s"])
 	if rep.get("season_over", false):

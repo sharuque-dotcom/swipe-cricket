@@ -162,6 +162,21 @@ godot --headless --export-debug Android build/swipe-cricket-debug.apk
 
 CI builds the APK and a web build on every push; download them from the run's artifacts.
 
+## More to play
+
+- **BBL|16**: the eight Big Bash clubs with squads as of 13 November 2026, all 40 league
+  fixtures from the Chennai opener, the grounds, and the finals (Qualifier, Knockout,
+  Challenger, Final). Four-over powerplay plus the **Power Surge**: from the eleventh over
+  tap CALL SURGE for two more powerplay overs (taken for you if you leave it to the 19th).
+- **Chase of the Day**: a new finish every date (need so many off a few balls, a few
+  wickets left), the same all day. The first try counts toward your streak.
+- **Rivals**: bowlers remember how they got you out and come back with that plan; their
+  card says so.
+- **Locker**: eight achievements unlock bat stickers, helmet colours and celebrations.
+- **Career form**: three cheap innings and you drop down the order; a run of big scores
+  moves you up.
+- Result cards show a wagon wheel and the shot of the innings.
+
 ## Art
 
 The low-poly look is built by scripts, run with Blender 4.2:

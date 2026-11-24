@@ -67,6 +67,7 @@ var stats := {"matches": 0, "innings": 0, "not_outs": 0, "runs": 0, "balls": 0, 
 	"fifties": 0, "hundreds": 0, "fours": 0, "sixes": 0, "ducks": 0, "wins": 0}
 var timing_totals := {"perfect": 0, "early": 0, "late": 0, "miss": 0}
 var recent: Array = []         # newest first: {runs, balls, out, won, opp, tier, fours, sixes}
+var order_shift := 0           # places moved down (+) or up (-) the order by form
 var history: Array = []        # one line per finished season
 
 static func create(player_name: String, player_role: String) -> Career:
@@ -81,8 +82,32 @@ static func create(player_name: String, player_role: String) -> Career:
 	c.next_seed = int(Time.get_unix_time_from_system()) % 100000 + 1
 	return c
 
+## Where you bat: your role's place, moved by form (see _selection).
 func position() -> int:
-	return int(ROLES[role].pos)
+	return clampi(int(ROLES[role].pos) + order_shift, 0, 7)
+
+## Selection pressure: three poor innings in a row and you're moved down the order; a run of
+## big scores moves you back up (and past your usual spot). Returns a note, or "".
+func _selection() -> String:
+	var last := []
+	for r: Dictionary in recent:
+		if bool(r.get("batted", true)):
+			last.append(int(r.runs))
+		if last.size() == 3:
+			break
+	if last.size() < 3:
+		return ""
+	var avg := float(last[0] + last[1] + last[2]) / 3.0
+	var before := position()
+	if avg < 12.0 and order_shift < 3:
+		order_shift += 1
+	elif avg >= 35.0 and order_shift > -2:
+		order_shift -= 1
+	if position() > before:
+		return "Out of form: dropped down to number %d" % (position() + 1)
+	if position() < before:
+		return "In form: moved up to number %d" % (position() + 1)
+	return ""
 
 func tier_info() -> Dictionary:
 	return TIERS[clampi(tier, 0, TIERS.size() - 1)]
@@ -333,6 +358,7 @@ func record_match(m: MatchState) -> Dictionary:
 		"opp": m.red_name, "tier": str(tier_info().name), "fours": int(b.fours), "sixes": int(b.sixes)})
 	if recent.size() > 12:
 		recent.pop_back()
+	report.selection = _selection()
 	match_no += 1
 	next_seed += 7919
 	if tier >= IPL_TIER and not m.ipl.is_empty():
@@ -391,7 +417,7 @@ func to_dict() -> Dictionary:
 		"footwork": footwork, "points": points, "tier": tier, "season": season,
 		"match_no": match_no, "season_wins": season_wins, "season_runs": season_runs, "season_outs": season_outs,
 		"next_seed": next_seed, "ipl_team": ipl_team, "ipl_season": ipl_season, "auction": auction,
-		"stats": stats, "timing_totals": timing_totals, "recent": recent, "history": history}
+		"stats": stats, "timing_totals": timing_totals, "recent": recent, "history": history, "order_shift": order_shift}
 
 static func from_dict(d: Dictionary) -> Career:
 	var c := Career.new()
@@ -419,6 +445,7 @@ static func from_dict(d: Dictionary) -> Career:
 	for k in c.timing_totals:
 		c.timing_totals[k] = int(tt.get(k, 0))
 	c.recent = d.get("recent", [])
+	c.order_shift = int(d.get("order_shift", 0))
 	c.history = d.get("history", [])
 	return c
 

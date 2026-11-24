@@ -149,7 +149,7 @@ func test_state_success_leads_to_the_ipl_auction() -> void:
 	c.join(str(c.auction[0]))
 	var opts := c.match_opts(false)
 	check(opts.has("ipl") and str(opts.blue_name) == c.ipl_team, "an IPL fixture for %s" % c.ipl_team)
-	check(opts.lineup[2] == "Sam Okoro" and opts.lineup.size() == 11, "you bat at three in an XI of eleven")
+	check(opts.lineup[c.position()] == "Sam Okoro" and opts.lineup.size() == 11, "you bat in your slot (%d, moved by form) in an XI of eleven" % (c.position() + 1))
 	var bowlers: Array = opts.blue_bowlers
 	for b in bowlers:
 		check(opts.lineup.has(b), "%s still plays" % b)
@@ -167,7 +167,7 @@ func test_an_ipl_career_season() -> void:
 			break
 		IplData.register_bowlers()
 		var m := MatchState.create(Ipl.seed_for({"n": int(opts.ipl.n)}), opts)
-		check(m.skill_for(0).role.begins_with("You"), "you open for RR")
+		check(m.skill_for(c.position()).role.begins_with("You"), "you bat for RR at %d" % (c.position() + 1))
 		var rng := RandomNumberGenerator.new()
 		rng.seed = guard
 		while not m.finished():
@@ -182,3 +182,15 @@ func test_an_ipl_career_season() -> void:
 	check(c.season == 2 and c.ipl_team == "RR" and c.match_no == 0, "a new IPL season with RR")
 	var again := Career.from_dict(JSON.parse_string(JSON.stringify(c.to_dict())))
 	check(again.ipl_team == "RR" and again.history.size() == 1 and again.points == c.points, "an IPL career saves")
+
+func test_form_moves_you_up_and_down_the_order() -> void:
+	var c := Career.create("Form Test", "Top order")
+	var base := c.position()
+	for r in [3, 0, 8]:
+		c.recent.push_front({"runs": r, "balls": 10, "out": "b X", "batted": true})
+	var note := c._selection()
+	check(c.position() == base + 1 and note.begins_with("Out of form"), "three cheap innings: dropped down (%s)" % note)
+	for r in [60, 45, 52]:
+		c.recent.push_front({"runs": r, "balls": 30, "out": "", "batted": true})
+	note = c._selection()
+	check(c.position() == base and note.begins_with("In form"), "a run of big scores: back up (%s)" % note)
