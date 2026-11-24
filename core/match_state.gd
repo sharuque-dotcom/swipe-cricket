@@ -60,6 +60,7 @@ var free_hit := false            # the next legal ball is a free hit (after a no
 ## batting side calls once the tenth over is done.
 var surge_rule := false
 var surge_at := -1               # the over the surge starts (0-based), -1 not called
+var daily := {}                  # Chase of the Day: {date, n}
 
 ## `opts` (all optional): attack (five names), pitch, night, blue_name, red_name,
 ## target_scale (how strong Red's batting is), lineup (Blue's eleven names), career.
@@ -84,6 +85,7 @@ static func create(rng_seed: int, opts: Dictionary = {}) -> MatchState:
 	var red_names: Array = opts.get("red_lineup", RED)
 	var our: Array = opts.get("lineup", BLUE)
 	m.surge_rule = bool(opts.get("surge", false))
+	m.daily = opts.get("daily", {})
 	var sim := InningsSim.run(rng_seed, red_names, strength, opts.get("blue_bowlers", our.slice(6, 11)), our, m.surge_rule)
 	m.red_card = sim.batting
 	m.red_bowling = sim.bowling
@@ -364,7 +366,7 @@ func to_dict() -> Dictionary:
 		"machine_state": str(machine_state), "seed": seed_value, "attack": attack, "pitch": pitch,
 		"night": night, "blue_name": blue_name, "red_name": red_name, "career": career, "timing": timing,
 		"fow": fow, "red_card": red_card, "red_bowling": red_bowling, "skills": skills, "kits": kits, "ipl": ipl, "chase_scale": chase_scale, "red_names": red_names,
-		"extras": extras, "free_hit": free_hit, "surge_rule": surge_rule, "surge_at": surge_at}
+		"extras": extras, "free_hit": free_hit, "surge_rule": surge_rule, "surge_at": surge_at, "daily": daily}
 
 static func from_dict(d: Dictionary) -> MatchState:
 	var m := MatchState.new()
@@ -408,6 +410,9 @@ static func from_dict(d: Dictionary) -> MatchState:
 	m.free_hit = bool(d.get("free_hit", false))
 	m.surge_rule = bool(d.get("surge_rule", false))
 	m.surge_at = int(d.get("surge_at", -1))
+	m.daily = d.get("daily", {})
+	if m.daily.has("n"):
+		m.daily.n = int(m.daily.n)
 	var t: Dictionary = d.get("timing", {})
 	for k in m.timing:
 		m.timing[k] = int(t.get(k, 0))

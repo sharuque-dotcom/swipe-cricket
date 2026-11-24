@@ -238,3 +238,17 @@ func test_wide_and_no_ball_accounting() -> void:
 	check(not m.free_hit and m.balls == 1, "the free hit is used up by the next legal ball")
 	var back := MatchState.from_dict(m.to_dict())
 	check(back.extras == 2, "extras survive a save")
+
+func test_chase_of_the_day_sets_up_the_finish() -> void:
+	var sc := Daily.scenario("2026-12-01")
+	check(sc == Daily.scenario("2026-12-01"), "the same scenario all day")
+	check(Daily.number("2026-11-24") == 1 and Daily.number("2026-12-01") == 8, "numbered from launch day")
+	var m := MatchState.create(9, Daily.match_opts(sc))
+	Daily.apply(m, sc)
+	check(m.need() == int(sc.need) and m.balls_left() == int(sc.balls), "need %d off %d" % [m.need(), m.balls_left()])
+	check(MatchState.MAX_WICKETS - m.wickets == int(sc.wickets_left), "wickets in hand")
+	check(m.striker == m.wickets and str(m.batters[m.striker].out) == "", "the next batter is in")
+	var total := 0
+	for b in m.batters:
+		total += int(b.runs)
+	check(total == m.runs, "the batters' runs add up (%d v %d)" % [total, m.runs])

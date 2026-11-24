@@ -89,6 +89,8 @@ func _new_session() -> void:
 		var sd := int(Time.get_unix_time_from_system()) if not autoplay else 21
 		var opts := {}
 		for arg in OS.get_cmdline_user_args():
+			if arg == "--daily":
+				Daily.active = true
 			if arg.begins_with("--league="):
 				# Test hook: play your next match of a league season (made up if none).
 				Ipl.current = arg.trim_prefix("--league=")
@@ -132,12 +134,20 @@ func _new_session() -> void:
 				# The two spinners bowl the first overs (for testing spin).
 				var atk := BowlerProfile.DEFAULT_ATTACK.duplicate()
 				opts["attack"] = [atk[3], atk[4], atk[0], atk[1], atk[2]]
+		var daily_sc := {}
+		if Daily.active and not Career.active and not Ipl.active:
+			daily_sc = Daily.scenario(Daily.today())
+			opts = Daily.match_opts(daily_sc)
+			sd = absi(hash(str(daily_sc.date)))
 		match_state = MatchState.create(sd, opts)
+		if not daily_sc.is_empty():
+			Daily.apply(match_state, daily_sc)
 		machine = BowlingMachine.new(sd)
 		match_state.machine_state = machine.state
 	else:
 		machine.state = match_state.machine_state
 	Career.active = not match_state.career.is_empty()
+	Daily.active = not match_state.daily.is_empty()
 	Ipl.active = not match_state.ipl.is_empty() and match_state.career.is_empty()
 	if not match_state.ipl.is_empty():
 		if Ipl.active:
@@ -159,7 +169,7 @@ func _new_session() -> void:
 	_field_over = -1
 	_scenes.clear()
 	_scene = {}
-	if not resumed:
+	if not resumed and match_state.balls == 0:
 		_scenes.append({"kind": "openers"})
 	_replay_pending = false
 	_replaying = false
@@ -178,6 +188,17 @@ func _new_session() -> void:
 			"rows": [["Need", "%d off %d balls" % [m.need(), m.balls_left()]], ["Required rate", "%.1f" % m.required_rate()],
 				["On strike", m.striker_name()]],
 			"prompt": "Tap to carry on"})
+	elif Daily.active:
+		var st := Daily.stats()
+		var replay := Daily.played_today() and str(m.daily.get("date", "")) == Daily.today()
+		hud.show_card({"kicker": "CHASE OF THE DAY  ·  #%d" % int(m.daily.n), "title": "NEED %d OFF %d" % [m.need(), m.balls_left()],
+			"sub": "%d wicket%s left  ·  %s" % [MatchState.MAX_WICKETS - m.wickets, "" if MatchState.MAX_WICKETS - m.wickets == 1 else "s",
+				"under lights" if m.night else "in the day"],
+			"rows": [["Bowling at the death", ", ".join(m.attack.slice(0, 2).map(func(n): return _surname(str(n))))],
+				["Pitch", str(Conditions.info(m.pitch).name).capitalize(), Hud.GOLD],
+				["Streak", "%d  (best %d)" % [int(st.streak), int(st.best)], Hud.GREEN]],
+			"notes": ["A replay: it won't change your streak." if replay else "One shot at it today: win to keep the streak going."],
+			"prompt": "Tap to start"})
 	elif Ipl.active:
 		var ip: Dictionary = m.ipl
 		var opp: Dictionary = _league().team(m.red_name)
@@ -1242,6 +1263,9 @@ func _show_result() -> void:
 	if Ipl.active:
 		_ipl_result()
 		return
+	if Daily.active:
+		_daily_result(won)
+		return
 	hud.show_card({"kicker": "MATCH RESULT", "title": "YOU WIN!" if won else ("TIED!" if tied else "RED WIN"),
 		"sub": "" if tied else ("Blue win" + text.substr(by) if won else text.substr(by + 1)),
 		"accent": Hud.GOLD if won else (Hud.TEXT if tied else Hud.RED),
@@ -1354,6 +1378,28 @@ func _ipl_result() -> void:
 		"title": "WON" if won else "LOST", "sub": str(res.get("text", m.result_text())),
 		"accent": Hud.GOLD if won else Hud.RED, "rows": rows, "notes": notes, "prompt": "Tap for the season"})
 
+## Chase of the Day: the streak, and a reason to come back tomorrow.
+func _daily_result(won: bool) -> void:
+	var m := match_state
+	var first := not Daily.played_today()
+	var st := Daily.record(str(m.daily.date), won)
+	if won:
+		_fireworks(4)
+	var notes := []
+	if not first:
+		notes.append("A replay: your streak is as it was.")
+	elif won:
+		notes.append("Streak: %d. Chase #%d is tomorrow." % [int(st.streak), int(m.daily.n) + 1])
+	else:
+		notes.append("Streak over. Chase #%d is tomorrow." % (int(m.daily.n) + 1))
+	hud.show_card({"kicker": "CHASE OF THE DAY  ·  #%d" % int(m.daily.n), "title": "CHASED IT!" if won else "FELL SHORT",
+		"sub": "%d/%d  ·  %s" % [m.runs, m.wickets, ("won with %d ball%s to spare" % [m.balls_left(), "" if m.balls_left() == 1 else "s"])
+			if won else "needed %d more" % m.need()],
+		"accent": Hud.GOLD if won else Hud.RED,
+		"rows": [["Streak", str(st.streak), Hud.GREEN], ["Best streak", str(st.best)], ["Won", "%d of %d" % [int(st.won), int(st.played)]],
+			["Top scorer", m.top_blue()]],
+		"notes": notes, "prompt": "Tap for the menu"})
+
 ## The league this match belongs to (IplData or BblData).
 func _league() -> GDScript:
 	return Ipl.data_for(str(match_state.ipl.get("lg", "ipl")))
@@ -1379,6 +1425,10 @@ func _on_swipe_started() -> void:
 					return
 				if Career.active:
 					get_tree().call_deferred("change_scene_to_file", "res://game/career.tscn")
+					return
+				if Daily.active:
+					Daily.active = false
+					get_tree().call_deferred("change_scene_to_file", "res://game/menu.tscn")
 					return
 				match_state = null
 				_new_session()

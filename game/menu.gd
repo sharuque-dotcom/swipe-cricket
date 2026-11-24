@@ -49,6 +49,18 @@ func _ready() -> void:
 	var saved := _saved_summary()
 	if saved != "":
 		col.add_child(_button("RESUME MATCH", saved, Hud.GREEN, func(): _go("match")))
+	# Chase of the Day: today's finish, and the streak.
+	var sc := Daily.scenario(Daily.today())
+	var ds := Daily.stats()
+	var dsub := "Need %d off %d, %d wickets left  ·  streak %d" % [int(sc.need), int(sc.balls), int(sc.wickets_left), int(ds.streak)]
+	if Daily.played_today():
+		dsub = "Today's: %s  ·  streak %d  ·  next one tomorrow" % [str(ds.result), int(ds.streak)]
+	col.add_child(_button("CHASE OF THE DAY #%d" % int(sc.n), dsub, Hud.RED, func():
+		Career.active = false
+		Ipl.active = false
+		Daily.active = true
+		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://match.json"))
+		_go("match")))
 	var bbl := Ipl.load_saved("bbl")
 	col.add_child(_button("BBL|16", ("%s  ·  %s" % [BblData.team(bbl.team).name, "season over" if bbl.season_over() else "%d played" % bbl.table()[bbl.position() - 1].p])
 		if bbl != null else "The Big Bash: eight clubs, real squads, Power Surge, finals", Color(1.0, 0.5, 0.0), func():
@@ -65,6 +77,7 @@ func _ready() -> void:
 	col.add_child(_button("NEW MATCH", "Chase Red's total in 20 overs", Hud.BLUE, func():
 		Career.active = false
 		Ipl.active = false
+		Daily.active = false
 		DirAccess.remove_absolute(ProjectSettings.globalize_path("user://match.json"))
 		_go("match")))
 	col.add_child(_button("NETS", "12 balls to find your timing", Hud.GOLD, func(): _go("nets")))
